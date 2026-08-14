@@ -58,10 +58,13 @@ class EvaluationResult(BaseModel):
     # Lovpålagt saksbehandlingsfrist og gjenværende tid (pbl § 21-7 / SAK10)
     statutory_deadline_weeks: int = 12  # 3 eller 12 uker (SAK10 § 7-1 / § 7-2)
     statutory_deadline_days: int = 84
+    complete_application_date: Optional[str] = None  # Dato søknaden var komplett (fristen løper herfra iht. pbl § 21-7)
+    is_deadline_paused: bool = False  # True dersom fristen er stanset grunnet mangelbrev/tilleggsopplysninger
+    deadline_pause_reason: Optional[str] = None
     deadline_date: Optional[str] = None  # f.eks. "02.11.2026"
     days_remaining: Optional[int] = None  # f.eks. 14 (positiv) eller -5 (overskredet)
-    deadline_status: str = "God tid"  # "God tid", "Nærmer seg frist", "Fristoverskridelse", "Vedtatt / Avsluttet"
-    legal_basis: Optional[str] = None  # f.eks. "Plan- og bygningsloven § 21-7 (12-ukers frist)"
+    deadline_status: str = "God tid"  # "God tid", "Nærmer seg frist", "Fristoverskridelse", "Vedtatt / Avsluttet", "Frist stanset (Mangelbrev)"
+    legal_basis: Optional[str] = None  # f.eks. "Plan- og bygningsloven § 21-7 (12-ukers frist løper fra komplett søknad)"
     
     # Tydelig merking av evaluert analyse
     is_automated_analysis: bool = True
@@ -88,6 +91,8 @@ class Byggesak(BaseModel):
     official_decision_type: Optional[str] = "Ikke avgjort (Under behandling)"  # F.eks. "Innvilget / Rammetillatelse", "Innvilget / Ett-trinnstillatelse", "Igangsettingstillatelse", "Ferdigattest", "Avslag"
     decision_document_title: Optional[str] = None  # Tittel på det offisielle vedtaksdokumentet
     decision_date: Optional[str] = None  # Dato for kommunens vedtak
+    complete_application_date: Optional[str] = None  # Dato for komplett søknad (fristen løper herfra)
+    is_deadline_paused: bool = False  # Frist stanset pga mangelbrev
     
     # Utførende / foretak / søker
     primary_company: Optional[str] = None  # Hovedansvarlig firma / søker

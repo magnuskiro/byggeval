@@ -296,18 +296,22 @@ document.addEventListener("DOMContentLoaded", () => {
         const days = ev.days_remaining;
         const weeks = ev.statutory_deadline_weeks || 12;
         const basis = ev.legal_basis || 'pbl § 21-7';
+        const completeDate = ev.complete_application_date ? `Komplett søknad: ${ev.complete_application_date}` : '';
 
+        if (ev.is_deadline_paused) {
+            return `<span class="badge badge-deadline-urgent" title="${escapeHtml(ev.deadline_pause_reason || 'Frist stanset i påvente av tilleggsopplysninger')}"><i class="ri-pause-circle-line"></i> Frist stanset (Mangelbrev)</span>`;
+        }
         if (status === 'Vedtatt / Avsluttet') {
-            return `<span class="badge badge-deadline-completed" title="${escapeHtml(basis)}"><i class="ri-check-line"></i> Fullført (${ev.days_in_process || 0}d)</span>`;
+            return `<span class="badge badge-deadline-completed" title="${escapeHtml(basis)} &bull; ${completeDate}"><i class="ri-check-line"></i> Fullført (${ev.days_in_process || 0}d)</span>`;
         }
         if (status === 'Fristoverskridelse') {
             const overdueDays = Math.abs(days || 0);
-            return `<span class="badge badge-deadline-overdue" title="${escapeHtml(basis)} - Fristoverskridelse etter ${weeks} uker"><i class="ri-alarm-warning-fill"></i> Overskredet (-${overdueDays}d)</span>`;
+            return `<span class="badge badge-deadline-overdue" title="${escapeHtml(basis)} &bull; ${completeDate} &bull; Fristoverskridelse etter ${weeks} uker"><i class="ri-alarm-warning-fill"></i> Overskredet (-${overdueDays}d)</span>`;
         }
         if (status === 'Nærmer seg frist') {
-            return `<span class="badge badge-deadline-urgent" title="${escapeHtml(basis)} - Lovpålagt frist: ${ev.deadline_date || ''}"><i class="ri-timer-fill"></i> ${days} dager gjenstår</span>`;
+            return `<span class="badge badge-deadline-urgent" title="${escapeHtml(basis)} &bull; ${completeDate} &bull; Lovpålagt frist: ${ev.deadline_date || ''}"><i class="ri-timer-fill"></i> ${days} dager gjenstår</span>`;
         }
-        return `<span class="badge badge-deadline-ok" title="${escapeHtml(basis)} - Lovpålagt frist: ${ev.deadline_date || ''}"><i class="ri-time-line"></i> ${days || 0} dager igjen (${weeks}u)</span>`;
+        return `<span class="badge badge-deadline-ok" title="${escapeHtml(basis)} &bull; ${completeDate} &bull; Lovpålagt frist: ${ev.deadline_date || ''}"><i class="ri-time-line"></i> ${days || 0} dager igjen (${weeks}u)</span>`;
     }
 
     // =========================================================================
@@ -354,16 +358,19 @@ document.addEventListener("DOMContentLoaded", () => {
         const deadlineBadgeHtml = getDeadlineBadge(ev);
         const street = addr.street_name ? `${addr.street_name} ${addr.house_number || ''}${addr.house_letter || ''}`.trim() : 'Tønsberg';
 
+        // Kommunens faktiske status på kortet
+        const municipalStatusLabel = c.has_official_decision ? c.official_decision_type : (c.official_status || stageInfo.label);
+
         return `
             <div class="case-card" data-id="${c.identifikator}">
                 <div>
-                    <!-- Topplinje med Saksnummer og Kommunal Status-Pill -->
+                    <!-- Topplinje med Saksnummer og Kommunens Status-Pill -->
                     <div class="case-card-header">
                         <span class="saksnummer-badge">${c.saksnummer || 'Uten saksnr'}</span>
                         <span class="status-pill status-${stageInfo.slug}">
                             <span class="status-dot ${stageInfo.slug === 'under-behandling' ? 'status-dot-pulse' : ''}"></span>
                             <i class="${stageInfo.icon}"></i>
-                            ${escapeHtml(stageInfo.label)}
+                            ${escapeHtml(municipalStatusLabel)}
                         </span>
                     </div>
 
@@ -372,7 +379,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <!-- Tydelig statusbanner fra kommunen -->
                     <div class="case-status-banner status-${stageInfo.slug}">
                         <i class="${stageInfo.icon}"></i>
-                        <span><strong>Kommunens status:</strong> ${c.has_official_decision ? escapeHtml(c.official_decision_type) : escapeHtml(stageInfo.label)}</span>
+                        <span><strong>Kommunens status:</strong> ${escapeHtml(municipalStatusLabel)}</span>
                     </div>
 
                     <div class="case-address-row">
@@ -483,7 +490,7 @@ document.addEventListener("DOMContentLoaded", () => {
         let deadlineColor = '#10b981';
         if (ev.deadline_status === 'Fristoverskridelse') {
             deadlineColor = '#ef4444';
-        } else if (ev.deadline_status === 'Nærmer seg frist') {
+        } else if (ev.deadline_status === 'Nærmer seg frist' || ev.is_deadline_paused) {
             deadlineColor = '#f59e0b';
         } else if (ev.deadline_status === 'Vedtatt / Avsluttet') {
             deadlineColor = '#3b82f6';
@@ -502,6 +509,9 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
+        // Kommunens faktiske status
+        const municipalStatusLabel = c.has_official_decision ? c.official_decision_type : (c.official_status || stageInfo.label);
+
         elements.drawerContent.innerHTML = `
             <div class="drawer-header">
                 <div class="drawer-meta-bar">
@@ -509,7 +519,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span class="status-pill status-${stageInfo.slug}">
                         <span class="status-dot"></span>
                         <i class="${stageInfo.icon}"></i>
-                        ${escapeHtml(stageInfo.label)}
+                        ${escapeHtml(municipalStatusLabel)}
                     </span>
                     <span class="badge badge-category">${ev.category}</span>
                 </div>
@@ -539,7 +549,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <!-- SEKSJON 1: OFFISIELL KOMMUNAL STATUS & VEDTAK -->
             <div class="official-decision-box ${decisionBoxClass}">
                 <div class="official-decision-header">
-                    <span class="official-badge-tag"><i class="ri-government-line"></i> Offisiell status fra Tønsberg kommune</span>
+                    <span class="official-badge-tag"><i class="ri-government-line"></i> Kommunens offisielle status</span>
                     <span style="font-size: 12px; font-weight: 600; color: #475569;">Offisiell status: ${escapeHtml(c.official_status || 'Under behandling')}</span>
                 </div>
 
@@ -550,7 +560,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 ${c.has_official_decision && c.decision_document_title ? `
                     <div class="official-doc-item">
-                        <div><strong><i class="ri-file-shield-2-line"></i> Journalført vedtaksdokument:</strong></div>
+                        <div><strong><i class="ri-file-shield-2-line"></i> Journalført vedtaksdokument fra kommunen:</strong></div>
                         <div style="font-weight: 600; margin: 2px 0;">${escapeHtml(c.decision_document_title)}</div>
                         ${c.decision_date ? `<div style="color: var(--text-muted); font-size: 11px;">Dato for vedtak: ${c.decision_date}</div>` : ''}
                     </div>
@@ -566,15 +576,26 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="deadline-header-row">
                     <strong style="font-size: 14px; color: var(--primary); display: flex; align-items: center; gap: 6px;">
                         <i class="ri-timer-line" style="color: ${deadlineColor}; font-size: 18px;"></i>
-                        <span>Lovpålagt Saksbehandlingsfrist</span>
+                        <span>Lovpålagt Saksbehandlingsfrist (Løper fra komplett søknad)</span>
                     </strong>
                     ${getDeadlineBadge(ev)}
                 </div>
+
+                ${ev.is_deadline_paused ? `
+                    <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 12px; font-size: 12px; color: #92400e; display: flex; align-items: center; gap: 8px;">
+                        <i class="ri-pause-circle-fill" style="font-size: 16px; color: #d97706;"></i>
+                        <span><strong>Fristen er stanset:</strong> ${escapeHtml(ev.deadline_pause_reason || 'Kommunen har etterspurt tilleggsopplysninger.')}</span>
+                    </div>
+                ` : ''}
 
                 <div class="deadline-stats-grid">
                     <div class="deadline-stat-card">
                         <span class="deadline-stat-value">${ev.statutory_deadline_weeks || 12} uker</span>
                         <span class="deadline-stat-label">Lovpålagt frist</span>
+                    </div>
+                    <div class="deadline-stat-card">
+                        <span class="deadline-stat-value">${ev.complete_application_date || c.dato || '–'}</span>
+                        <span class="deadline-stat-label">Komplett søknad</span>
                     </div>
                     <div class="deadline-stat-card">
                         <span class="deadline-stat-value">${ev.deadline_date || '–'}</span>
@@ -583,10 +604,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="deadline-stat-card">
                         <span class="deadline-stat-value" style="color: ${deadlineColor};">${daysRem !== null ? (daysRem >= 0 ? daysRem + ' dager' : '-' + Math.abs(daysRem) + ' dager') : '–'}</span>
                         <span class="deadline-stat-label">Resttid / Avvik</span>
-                    </div>
-                    <div class="deadline-stat-card">
-                        <span class="deadline-stat-value">${daysInProc} dager</span>
-                        <span class="deadline-stat-label">Brukt tid</span>
                     </div>
                 </div>
 
@@ -597,7 +614,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
                     <i class="ri-scales-3-line" style="margin-right: 4px; color: var(--accent);"></i>
-                    <strong>Hjemmel:</strong> ${escapeHtml(ev.legal_basis || 'Plan- og bygningsloven § 21-7')}
+                    <strong>Hjemmel:</strong> ${escapeHtml(ev.legal_basis || 'Plan- og bygningsloven § 21-7 (Fristen løper fra komplett søknad)')}
                 </div>
             </div>
 

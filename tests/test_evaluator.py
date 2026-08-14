@@ -203,3 +203,58 @@ def test_extract_official_decision():
     case_pending = ByggesakEvaluator.create_byggesak_model(raw_sak_pending)
     assert case_pending.has_official_decision is False
     assert "Under behandling" in case_pending.official_decision_type
+
+
+def test_complete_application_date_and_pause():
+    """Tester at saksbehandlingstiden løper fra komplett søknad (ettersending) og fryses ved mangelbrev."""
+    # 1. Sak hvor tilleggsdokumentasjon ble ettersendt 01.07.2026 etter opprinnelig søknad 01.05.2026
+    raw_sak = {
+        "identifikator": "test-supp-1",
+        "saksnummer": "2026/300",
+        "tittel": "Parkveien 12 - 100/1 - tilbygg",
+        "dato": "01.05.2026",
+        "dokumenter": [
+            {
+                "identifikator": "doc-a",
+                "tittel": "Søknad om tilbygg",
+                "fra": ["Arkitekt AS"],
+                "dato": "01.05.2026"
+            },
+            {
+                "identifikator": "doc-b",
+                "tittel": "Ettersending av supplerende nabovarsel og situasjonsplan",
+                "fra": ["Arkitekt AS"],
+                "dato": "01.07.2026"
+            }
+        ]
+    }
+    case = ByggesakEvaluator.create_byggesak_model(raw_sak)
+    assert case.complete_application_date == "01.07.2026"
+    assert case.evaluation.complete_application_date == "01.07.2026"
+    assert case.evaluation.is_deadline_paused is False
+
+    # 2. Sak med ubesvart mangelbrev fra kommunen
+    raw_sak_mangel = {
+        "identifikator": "test-mangel-1",
+        "saksnummer": "2026/301",
+        "tittel": "Fjellveien 3 - 80/2 - bruksendring",
+        "dato": "01.05.2026",
+        "dokumenter": [
+            {
+                "identifikator": "doc-c",
+                "tittel": "Søknad om bruksendring",
+                "fra": ["Søker AS"],
+                "dato": "01.05.2026"
+            },
+            {
+                "identifikator": "doc-d",
+                "tittel": "Mangelbrev - ber om tilleggsdokumentasjon for brannsikkerhet",
+                "fra": ["Tønsberg kommune"],
+                "dato": "15.05.2026"
+            }
+        ]
+    }
+    case_mangel = ByggesakEvaluator.create_byggesak_model(raw_sak_mangel)
+    assert case_mangel.is_deadline_paused is True
+    assert case_mangel.evaluation.is_deadline_paused is True
+    assert "Frist stanset" in case_mangel.evaluation.deadline_status

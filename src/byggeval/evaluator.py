@@ -169,13 +169,17 @@ class ByggesakEvaluator:
         stage = cls._determine_stage(sak_data, all_text_lower)
 
         # Beregn lovpålagte saksbehandlingsfrister og gjenværende tid (pbl § 21-7 / SAK10)
+        # Fristen løper fra det tidspunkt søknaden er komplett!
         deadline_info = cls._calculate_deadlines(
-            sak_data.get("dato"),
+            sak_data,
             category=category,
             subcategory=subcategory,
             flags=flags,
             stage=stage
         )
+
+        # Beregn dager i prosess fra komplett søknad
+        days_in_process = deadline_info.get("days_in_process") or cls._calculate_days_in_process(sak_data.get("dato"))
 
         # Generer norsk sammendrag og anbefaling
         summary = cls._generate_summary(title, category, subcategory, risk_level, risk_factors, stage)
@@ -196,6 +200,9 @@ class ByggesakEvaluator:
             days_in_process=days_in_process,
             statutory_deadline_weeks=deadline_info["weeks"],
             statutory_deadline_days=deadline_info["days"],
+            complete_application_date=deadline_info["complete_application_date"],
+            is_deadline_paused=deadline_info["is_deadline_paused"],
+            deadline_pause_reason=deadline_info["deadline_pause_reason"],
             deadline_date=deadline_info["deadline_date"],
             days_remaining=deadline_info["days_remaining"],
             deadline_status=deadline_info["deadline_status"],
@@ -205,7 +212,7 @@ class ByggesakEvaluator:
     @classmethod
     def _calculate_deadlines(
         cls,
-        dato_str: Optional[str],
+        sak_data: Dict[str, Any],
         category: str,
         subcategory: Optional[str],
         flags: List[str],
@@ -213,14 +220,13 @@ class ByggesakEvaluator:
     ) -> Dict[str, Any]:
         """
         Beregner lovpålagt saksbehandlingsfrist etter Plan- og bygningsloven § 21-7 og SAK10.
-        - 3 uker: Enkle tiltak i tråd med plan uten dispensasjon / naboprotest (SAK10 § 7-1)
-        - 12 uker: Tiltak med dispensasjoner, rammetillatelser, sektormyndigheter (SAK10 § 7-2)
-        - 3 uker: Igangsettingstillatelse og ferdigattest (SAK10 § 7-3 / § 7-4)
-        - 2 uker: Forhåndskonferanse (SAK10 § 7-5)
+        VIKTIG: Saksbehandlingstiden løper fra det tidspunkt søknaden er KOMPLETT (SAK10 § 7-1 / § 7-2).
+        Dersom kommunen har sendt mangelbrev / etterspurt tilleggsdokumentasjon, fryses fristen inntil
+        komplett supplering er mottatt.
         """
         weeks = 12
         days = 84
-        legal_basis = "Plan- og bygningsloven § 21-7 4. ledd (12-ukers standardfrist for ordinær byggesak)"
+        legal_basis = "Plan- og bygningsloven § 21-7 4. ledd (12-ukers standardfrist løper fra komplett søknad)"
 
         if stage == "Forhåndskonferanse":
             weeks = 2
@@ -246,37 +252,97 @@ class ByggesakEvaluator:
             days = 84
             legal_basis = "Plan- og bygningsloven § 21-7 4. ledd (12-ukers frist: krever dispensasjonsvedtak etter pbl kap 19)"
 
+        # 1. Finn dato for søknad og eventuell siste tilleggsdokumentasjon / mangelbrev
+        initial_date_str = sak_data.get("dato")
+        initial_dt = None
+        if initial_date_str:
+            try:
+                initial_dt = datetime.strptime(initial_date_str.strip(), "%d.%m.%Y")
+            except Exception:
+                pass
+
+        docs = sak_data.get("dokumenter", [])
+        latest_supplement_dt = None
+        latest_supplement_str = None
+        latest_mangelbrev_dt = None
+        latest_mangelbrev_str = None
+
+        for d in docs:
+            dtit = d.get("tittel", "").lower() if isinstance(d, dict) else (d.tittel.lower() if hasattr(d, "tittel") else "")
+            ddato = d.get("dato") if isinstance(d, dict) else (d.dato if hasattr(d, "dato") else None)
+            if not ddato:
+                continue
+
+            parsed_d = None
+            try:
+                parsed_d = datetime.strptime(ddato.strip(), "%d.%m.%Y")
+            except Exception:
+                continue
+
+            # Sjekk etterspørsel om mangler fra kommunen (mangelbrev / ber om tilleggsinfo)
+            if any(w in dtit for w in ["mangelbrev", "tilleggsdokumentasjon og varsel", "ber om tilleggs", "mangler ved søknad", "etterlysning"]):
+                if not latest_mangelbrev_dt or parsed_d > latest_mangelbrev_dt:
+                    latest_mangelbrev_dt = parsed_d
+                    latest_mangelbrev_str = ddato
+
+            # Sjekk innsendt tilleggsdokumentasjon / supplering fra søker
+            if any(w in dtit for w in ["ettersending", "supplering", "tilleggsopplysning", "revidert", "svar på mangel", "supplerende"]):
+                if not latest_supplement_dt or parsed_d > latest_supplement_dt:
+                    latest_supplement_dt = parsed_d
+                    latest_supplement_str = ddato
+
+        # Avgjør komplett søknadsdato
+        complete_dt = initial_dt
+        complete_date_str = initial_date_str
+
+        # Dersom det er ettersendt tilleggsdokumentasjon etter opprinnelig dato:
+        if latest_supplement_dt and (not initial_dt or latest_supplement_dt > initial_dt):
+            complete_dt = latest_supplement_dt
+            complete_date_str = latest_supplement_str
+
+        # Sjekk om fristen er stanset/fryst pga ubesvart mangelbrev
+        is_deadline_paused = False
+        deadline_pause_reason = None
+        if latest_mangelbrev_dt:
+            if not latest_supplement_dt or latest_mangelbrev_dt > latest_supplement_dt:
+                is_deadline_paused = True
+                deadline_pause_reason = f"Kommunen etterspurte tilleggsdokumentasjon {latest_mangelbrev_str}. Fristen er fryst i påvente av svar."
+
         deadline_date = None
         days_remaining = None
         deadline_status = "God tid"
+        days_in_proc = None
 
-        if dato_str:
-            try:
-                dt = datetime.strptime(dato_str.strip(), "%d.%m.%Y")
-                from datetime import timedelta
-                deadline_dt = dt + timedelta(days=days)
-                deadline_date = deadline_dt.strftime("%d.%m.%Y")
-                
-                # Beregn gjenværende dager mot dagens dato
-                delta = (deadline_dt.date() - datetime.now().date()).days
-                days_remaining = delta
+        if complete_dt:
+            from datetime import timedelta
+            deadline_dt = complete_dt + timedelta(days=days)
+            deadline_date = deadline_dt.strftime("%d.%m.%Y")
+            
+            # Beregn gjenværende dager mot dagens dato
+            delta = (deadline_dt.date() - datetime.now().date()).days
+            days_remaining = delta
+            days_in_proc = max(0, (datetime.now().date() - complete_dt.date()).days)
 
-                if stage in ["Vedtatt / Tillatelse gitt", "Ferdigbehandlet"]:
-                    deadline_status = "Vedtatt / Avsluttet"
-                elif days_remaining < 0:
-                    deadline_status = "Fristoverskridelse"
-                elif days_remaining <= 14:
-                    deadline_status = "Nærmer seg frist"
-                else:
-                    deadline_status = "God tid"
-            except Exception:
-                pass
+            if stage in ["Vedtatt / Tillatelse gitt", "Ferdigbehandlet"]:
+                deadline_status = "Vedtatt / Avsluttet"
+            elif is_deadline_paused:
+                deadline_status = "Frist stanset (Mangelbrev)"
+            elif days_remaining < 0:
+                deadline_status = "Fristoverskridelse"
+            elif days_remaining <= 14:
+                deadline_status = "Nærmer seg frist"
+            else:
+                deadline_status = "God tid"
 
         return {
             "weeks": weeks,
             "days": days,
+            "complete_application_date": complete_date_str,
+            "is_deadline_paused": is_deadline_paused,
+            "deadline_pause_reason": deadline_pause_reason,
             "deadline_date": deadline_date,
             "days_remaining": days_remaining,
+            "days_in_process": days_in_proc,
             "deadline_status": deadline_status,
             "legal_basis": legal_basis
         }
@@ -626,6 +692,8 @@ class ByggesakEvaluator:
             official_decision_type=decision_info["official_decision_type"],
             decision_document_title=decision_info["decision_document_title"],
             decision_date=decision_info["decision_date"],
+            complete_application_date=evaluation.complete_application_date if evaluation else None,
+            is_deadline_paused=evaluation.is_deadline_paused if evaluation else False,
             primary_company=primary_company,
             companies=companies,
             address_info=address_info,
