@@ -135,7 +135,8 @@ class TonsbergInnsynClient:
         search_term: Optional[str] = None,
         fetch_details: bool = True,
         skip_existing_ids: Optional[Set[str]] = None,
-        progress_callback: Optional[callable] = None
+        progress_callback: Optional[callable] = None,
+        limit_cases: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
         Henter en skånsom batch med saker, med støtte for å hoppe over allerede kjente saker.
@@ -145,9 +146,13 @@ class TonsbergInnsynClient:
         existing_ids = skip_existing_ids or set()
 
         for page in range(1, max_pages + 1):
+            if limit_cases and len(cases) >= limit_cases:
+                logger.info(f"Nådde ønsket antall nye saker ({len(cases)} av {limit_cases}). Avslutter innhenting.")
+                break
+
             try:
                 if progress_callback:
-                    progress_callback(f"Henter side {page} av {max_pages}...")
+                    progress_callback(f"Henter side {page} av {max_pages} (Nye saker hittil: {len(cases)})...")
 
                 overview = self.fetch_overview(
                     sakstype=sakstype,
@@ -162,6 +167,9 @@ class TonsbergInnsynClient:
                     break
 
                 for i, item in enumerate(items):
+                    if limit_cases and len(cases) >= limit_cases:
+                        break
+
                     # Finn saks-identifikator (enten parentIdentifier hvis dokument, eller identifier hvis sak)
                     parent_id = item.get("parentIdentifier")
                     item_id = item.get("identifier")

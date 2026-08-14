@@ -258,3 +258,30 @@ def test_complete_application_date_and_pause():
     assert case_mangel.is_deadline_paused is True
     assert case_mangel.evaluation.is_deadline_paused is True
     assert "Frist stanset" in case_mangel.evaluation.deadline_status
+
+
+def test_is_relevant_building_case():
+    """Tester at meldinger om tiltak unntatt søknadsplikt filtreres bort, mens reelle byggesaker beholdes."""
+    # 1. Melding om bygning unntatt søknadsplikt (skal filtreres bort)
+    unntatt_sak = {
+        "saksnummer": "2026/15267",
+        "tittel": "Skogsnaret 3 - 137/339 - garasje",
+        "dokumenter": [
+            {
+                "tittel": "Skogsnaret 3 - 137/339 - garasje - melding om bygning som er unntatt søknadsplikt"
+            }
+        ]
+    }
+    assert ByggesakEvaluator.is_relevant_building_case(unntatt_sak) is False
+
+    # 2. Reell byggesøknad (skal beholdes)
+    reell_sak = {
+        "saksnummer": "2026/15000",
+        "tittel": "Storgaten 10 - 100/2 - oppføring av tilbygg",
+        "dokumenter": [
+            {
+                "tittel": "Søknad om tillatelse i ett trinn"
+            }
+        ]
+    }
+    assert ByggesakEvaluator.is_relevant_building_case(reell_sak) is True

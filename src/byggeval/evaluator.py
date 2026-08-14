@@ -59,6 +59,54 @@ class ByggesakEvaluator:
 
         return info
 
+    @staticmethod
+    def is_relevant_building_case(raw_sak: Dict[str, Any]) -> bool:
+        """
+        Sjekker om saken er en reell byggesak som krever kommunal saksbehandling,
+        og filtrerer bort rene orienteringsmeldinger som 'melding om bygning som er unntatt søknadsplikt'.
+        """
+        title = (raw_sak.get("tittel") or "").lower()
+        undertittel = (raw_sak.get("undertittel") or "").lower()
+        
+        # Samle tekst fra saksdokumenter
+        docs = raw_sak.get("dokumenter", [])
+        docs_text = " ".join([
+            (d.get("tittel") if isinstance(d, dict) else getattr(d, "tittel", "")) or "" 
+            for d in docs
+        ]).lower()
+        
+        all_text = f"{title} {undertittel} {docs_text}"
+        
+        # Sjekk om det er melding om tiltak unntatt søknadsplikt
+        is_unntatt_notification = any(pattern in all_text for pattern in [
+            "unntatt søknadsplikt",
+            "unntatt fra søknadsplikt",
+            "melding om bygning som er unntatt",
+            "melding om tiltak som er unntatt",
+            "melding om frittliggende bygning",
+            "melding etter pbl § 20-5",
+            "melding om tiltak"
+        ])
+        
+        # Hvis det kun er en melding om unntatt tiltak og INGEN reell søknad om tillatelse/dispensasjon/forhåndskonferanse:
+        has_actual_application = any(pattern in all_text for pattern in [
+            "søknad om tillatelse",
+            "søknad om rammetillatelse",
+            "søknad om ett-trinn",
+            "søknad om igangsetting",
+            "søknad om dispensasjon",
+            "forhåndskonferanse",
+            "ulovlighet",
+            "tilsyn",
+            "rammetillatelse",
+            "ett-trinnstillatelse"
+        ])
+        
+        if is_unntatt_notification and not has_actual_application:
+            return False
+            
+        return True
+
     @classmethod
     def evaluate_case(cls, sak_data: Dict[str, Any]) -> EvaluationResult:
         """

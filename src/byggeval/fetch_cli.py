@@ -20,10 +20,17 @@ def run_fetch(
     sakstype: str = TonsbergInnsynClient.SAKSTYPE_BYGGESAK,
     db_path: str = "data/byggeval.db",
     delay: float = 0.5,
-    force_refresh: bool = False
+    force_refresh: bool = False,
+    count: int = None
 ):
     """Kjører skånsom innhenting og lagring av byggesaker."""
-    logger.info(f"Starter skånsom innhenting fra Tønsberg kommune (Sider: {pages}, Pr side: {page_size}, Forsinkelse: {delay}s, Søk: '{search_term or 'Ingen'}')...")
+    effective_pages = pages
+    if count and pages == 3:
+        # Beregn nok sider til å hente ønsket antall nye saker selv om mange allerede finnes
+        effective_pages = max(15, (count // page_size) + 20)
+
+    target_str = f", Mål: {count} nye saker" if count else ""
+    logger.info(f"Starter skånsom innhenting fra Tønsberg kommune (Sider: {effective_pages}, Pr side: {page_size}, Forsinkelse: {delay}s{target_str}, Søk: '{search_term or 'Ingen'}')...")
     
     client = TonsbergInnsynClient(delay_between_requests=delay)
     db = Database(db_path=db_path)
@@ -33,18 +40,24 @@ def run_fetch(
         logger.info(f"Fant {len(existing_ids)} saker allerede i lokal database. Hopper over uendrede detaljkall for å skåne serveren.")
 
     raw_cases = client.fetch_cases_batch(
-        max_pages=pages,
+        max_pages=effective_pages,
         page_size=page_size,
         sakstype=sakstype,
         search_term=search_term,
         fetch_details=True,
-        skip_existing_ids=existing_ids
+        skip_existing_ids=existing_ids,
+        limit_cases=count
     )
     
     logger.info(f"Mottok {len(raw_cases)} nye unike saker fra Tønsberg API. Starter evaluering og lagring...")
     
     saved_cases = []
+    skipped_count = 0
     for raw in raw_cases:
+        if not ByggesakEvaluator.is_relevant_building_case(raw):
+            skipped_count += 1
+            logger.info(f"Hopper over sak {raw.get('saksnummer', 'Uten saksnr')} ('{raw.get('tittel', '')}') – gjelder tiltak unntatt søknadsplikt.")
+            continue
         try:
             case = ByggesakEvaluator.create_byggesak_model(raw)
             db.save_case(case)
@@ -52,9 +65,9 @@ def run_fetch(
         except Exception as e:
             logger.error(f"Feil ved evaluering/lagring av sak {raw.get('identifikator')}: {e}")
             
-    db.record_sync(cases_synced=len(saved_cases), error_count=len(raw_cases) - len(saved_cases), status="success")
+    db.record_sync(cases_synced=len(saved_cases), error_count=len(raw_cases) - len(saved_cases) - skipped_count, status="success")
     
-    logger.info(f"Fullført! Lagret {len(saved_cases)} nye byggesaker i databasen.")
+    logger.info(f"Fullført! Lagret {len(saved_cases)} nye relevante byggesaker i databasen ({skipped_count} saker unntatt søknadsplikt ble filtrert bort).")
     
     # Skriv ut sammendrag
     stats = db.get_statistics()
@@ -81,6 +94,7 @@ def run_fetch(
 def main():
     parser = argparse.ArgumentParser(description="Byggeval - Hent byggesaker fra Tønsberg kommune (skånsom og rate-limited)")
     parser.add_argument("--pages", type=int, default=3, help="Antall sider å hente (default: 3)")
+    parser.add_argument("--count", type=int, default=None, help="Mål for antall nye saker som skal hentes inn (f.eks. 150)")
     parser.add_argument("--page-size", type=int, default=20, help="Antall saker per side (default: 20)")
     parser.add_argument("--delay", type=float, default=0.5, help="Forsinkelse i sekunder mellom forespørsler (default: 0.5s)")
     parser.add_argument("--search", type=str, default=None, help="Søketekst for filtrering")
@@ -98,7 +112,8 @@ def main():
         sakstype=sakstype,
         db_path=args.db,
         delay=args.delay,
-        force_refresh=args.force
+        force_refresh=args.force,
+        count=args.count
     )
 
 
