@@ -122,3 +122,5 @@ def test_create_byggesak_model():
     assert case.evaluation.category in ["Fasadeendring", "Tilbygg & Påbygg"]
     assert len(case.dokumenter) == 1
     assert case.dokumenter[0].fra == ["Tun Arkitektur AS"]
+    assert case.primary_company == "Tun Arkitektur AS"
+    assert "Tun Arkitektur AS" in case.companies

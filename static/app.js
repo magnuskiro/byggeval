@@ -7,12 +7,14 @@ document.addEventListener("DOMContentLoaded", () => {
     // App State
     const state = {
         cases: [],
+        companies: [],
         total: 0,
         limit: 24,
         offset: 0,
         currentPage: 1,
         searchQuery: "",
         selectedCategory: "all",
+        selectedCompany: "all",
         selectedRisk: "all",
         selectedSort: "dato_desc",
         viewMode: "cards", // 'cards' | 'table'
@@ -36,6 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
         searchInput: document.getElementById("searchInput"),
         btnClearSearch: document.getElementById("btnClearSearch"),
         categoryFilter: document.getElementById("categoryFilter"),
+        companyFilter: document.getElementById("companyFilter"),
         riskFilter: document.getElementById("riskFilter"),
         sortFilter: document.getElementById("sortFilter"),
 
@@ -110,6 +113,21 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    async function fetchCompanies() {
+        try {
+            const res = await fetch("/api/companies?limit=150");
+            const data = await res.json();
+            state.companies = data.companies || [];
+
+            // Populate company filter select
+            const currentSelected = state.selectedCompany;
+            elements.companyFilter.innerHTML = `<option value="all">Alle firmaer / utførende (${state.companies.length})</option>` +
+                state.companies.map(c => `<option value="${escapeHtml(c.name)}" ${currentSelected === c.name ? 'selected' : ''}>${escapeHtml(c.name)} (${c.count})</option>`).join("");
+        } catch (err) {
+            console.error("Feil ved henting av firmaer:", err);
+        }
+    }
+
     async function fetchCases() {
         elements.casesContainer.innerHTML = `
             <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-muted);">
@@ -127,6 +145,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (state.searchQuery) params.append("search", state.searchQuery);
             if (state.selectedCategory !== "all") params.append("category", state.selectedCategory);
+            if (state.selectedCompany !== "all") params.append("company", state.selectedCompany);
             if (state.selectedRisk !== "all") params.append("risk_level", state.selectedRisk);
 
             const res = await fetch(`/api/cases?${params.toString()}`);
@@ -170,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border);">
                     <i class="ri-search-eye-line" style="font-size: 48px; color: var(--text-subtle); display: block; margin-bottom: 12px;"></i>
                     <h3 style="font-size: 18px; font-weight: 700; color: var(--primary); margin-bottom: 6px;">Ingen saker funnet</h3>
-                    <p style="font-size: 14px; color: var(--text-muted); max-width: 400px; margin: 0 auto;">Prøv å justere søkeordet ditt eller nullstill filtervalgene.</p>
+                    <p style="font-size: 14px; color: var(--text-muted); max-width: 400px; margin: 0 auto;">Prøv å justere søkeordet ditt, firmanavn eller nullstill filtervalgene.</p>
                 </div>
             `;
             elements.casesContainer.innerHTML = emptyHtml;
@@ -218,7 +237,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="badges-row">
                         <span class="badge ${riskClass}"><i class="ri-shield-line"></i> ${ev.risk_level || 'Ukjent'} risiko</span>
                         <span class="badge badge-category">${ev.category || 'Byggesak'}</span>
-                        <span class="badge badge-complexity">${ev.complexity || 'Standard'}</span>
+                        ${c.primary_company ? `<span class="badge badge-company" title="Utførende / Firma"><i class="ri-briefcase-line"></i> ${escapeHtml(c.primary_company)}</span>` : ''}
                     </div>
                 </div>
 
@@ -241,10 +260,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 <td><strong>${c.saksnummer}</strong></td>
                 <td>${c.dato}</td>
                 <td>${escapeHtml(street)} ${addr.matrikkel ? `(Gnr ${addr.matrikkel})` : ''}</td>
-                <td style="max-width: 320px; font-weight: 600;">${escapeHtml(c.tittel)}</td>
+                <td>${c.primary_company ? `<span class="badge badge-company"><i class="ri-briefcase-line"></i> ${escapeHtml(c.primary_company)}</span>` : '<span style="color: var(--text-subtle);">–</span>'}</td>
+                <td style="max-width: 260px; font-weight: 600;">${escapeHtml(c.tittel)}</td>
                 <td><span class="badge badge-category">${ev.category || 'Byggesak'}</span></td>
                 <td><span class="badge ${riskClass}">${ev.risk_level || 'Lav'}</span></td>
-                <td>${ev.complexity || 'Standard'}</td>
                 <td>${c.dokumenter ? c.dokumenter.length : 0}</td>
                 <td>
                     <button class="btn btn-secondary btn-sm btn-table-detail" data-id="${c.identifikator}">
@@ -312,6 +331,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${addr.matrikkel ? `<span class="matrikkel-tag">Gnr ${addr.matrikkel}</span>` : ''}
                     <span style="margin-left: auto; color: var(--text-muted); font-size: 13px;">Registrert: ${c.dato}</span>
                 </div>
+
+                ${c.primary_company ? `
+                    <div style="background: #eef2ff; border: 1px solid #c7d2fe; border-radius: var(--radius-md); padding: 10px 14px; display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 13px; color: #3730a3;">
+                        <i class="ri-briefcase-4-line" style="font-size: 16px;"></i>
+                        <span><strong>Utførende foretak / søker:</strong> ${escapeHtml(c.primary_company)}</span>
+                    </div>
+                ` : ''}
 
                 <a href="${c.innsyn_url}" target="_blank" rel="noopener noreferrer" class="drawer-innsyn-btn">
                     <i class="ri-external-link-line"></i>
@@ -422,10 +448,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const marker = L.marker([p.latitude, p.longitude], { icon: customIcon });
 
+            const companyHtml = p.primary_company ? `<div style="font-size: 11px; color: #4338ca; font-weight: 600; margin-bottom: 4px;"><i class="ri-briefcase-line"></i> ${escapeHtml(p.primary_company)}</div>` : '';
+
             const popupHtml = `
                 <div style="font-family: var(--font-sans); min-width: 220px;">
                     <span style="font-size: 11px; font-weight: 700; color: #64748b;">${p.saksnummer}</span>
-                    <h4 style="font-size: 14px; font-weight: 700; color: #0f2b48; margin: 4px 0 8px 0;">${escapeHtml(p.tittel)}</h4>
+                    <h4 style="font-size: 14px; font-weight: 700; color: #0f2b48; margin: 4px 0 6px 0;">${escapeHtml(p.tittel)}</h4>
+                    ${companyHtml}
                     <div style="font-size: 12px; color: #475569; margin-bottom: 8px;">
                         <strong>Kategori:</strong> ${p.category}<br>
                         <strong>Risiko:</strong> ${p.risk_level} (${p.risk_score}/100)
@@ -558,6 +587,40 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             });
         }
+
+        // 4. Top Companies Chart
+        const compCanvas = document.getElementById("chartCompanies");
+        if (compCanvas && data.top_companies) {
+            if (state.charts.companies) state.charts.companies.destroy();
+
+            const labels = data.top_companies.map(c => c.name);
+            const counts = data.top_companies.map(c => c.count);
+
+            state.charts.companies = new Chart(compCanvas, {
+                type: "bar",
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: "Antall byggesaker",
+                        data: counts,
+                        backgroundColor: "#6366f1",
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    indexAxis: "y",
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: "#f1f5f9" } },
+                        y: { grid: { display: false } }
+                    }
+                }
+            });
+        }
     }
 
     // =========================================================================
@@ -565,7 +628,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // =========================================================================
 
     async function handleStartSync() {
-        const pages = parseInt(elements.syncPagesInput.value, 10) || 3;
+        const pages = parseInt(elements.syncPagesInput.value, 10) || 2;
         const search = elements.syncSearchInput.value.trim() || null;
 
         elements.syncProgressBox.classList.remove("hidden");
@@ -594,6 +657,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         elements.syncProgressBox.classList.add("hidden");
                         elements.btnStartSync.disabled = false;
                         fetchStats();
+                        fetchCompanies();
                         fetchCases();
                         if (state.activeTab === "map") fetchMapPoints();
                     }, 1200);
@@ -633,6 +697,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // Filters
     elements.categoryFilter.addEventListener("change", (e) => {
         state.selectedCategory = e.target.value;
+        state.currentPage = 1;
+        fetchCases();
+    });
+
+    elements.companyFilter.addEventListener("change", (e) => {
+        state.selectedCompany = e.target.value;
         state.currentPage = 1;
         fetchCases();
     });
@@ -766,5 +836,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Initial Load
     fetchStats();
+    fetchCompanies();
     fetchCases();
 });

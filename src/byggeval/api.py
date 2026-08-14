@@ -98,20 +98,22 @@ def perform_sync(pages: int, page_size: int, search: Optional[str], sakstype: Op
 
 @app.get("/api/cases")
 def get_cases(
-    search: Optional[str] = Query(None, description="Tekstsøk i tittel, saksnr, adresse eller saksbehandler"),
+    search: Optional[str] = Query(None, description="Tekstsøk i tittel, saksnr, adresse, saksbehandler eller firma/utførende"),
     category: Optional[str] = Query(None, description="Kategori (f.eks. Nybygg, Tilbygg & Påbygg, Ulovlighet & Tilsyn)"),
     risk_level: Optional[str] = Query(None, description="Risikonivå (Lav, Moderat, Høy, Kritisk)"),
     stage: Optional[str] = Query(None, description="Saksstadium"),
-    sort_by: str = Query("dato_desc", description="Sortering: dato_desc, dato_asc, risk_desc, complexity_desc, saksnummer_desc"),
+    company: Optional[str] = Query(None, description="Firma / utførende foretak / søker"),
+    sort_by: str = Query("dato_desc", description="Sortering: dato_desc, dato_asc, risk_desc, complexity_desc, saksnummer_desc, company_asc"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0)
 ):
-    """Henter en liste over byggesaker med støtte for søk, filtrering og paginering."""
+    """Henter en liste over byggesaker med støtte for søk, filtrering på firma/kategori/risiko og paginering."""
     cases, total = db.get_cases(
         search=search,
         category=category,
         risk_level=risk_level,
         stage=stage,
+        company=company,
         sort_by=sort_by,
         limit=limit,
         offset=offset
@@ -122,6 +124,13 @@ def get_cases(
         "limit": limit,
         "offset": offset
     }
+
+
+@app.get("/api/companies")
+def get_companies(limit: int = Query(100, ge=1, le=500)):
+    """Henter oversikt over registrerte utførende firmaer, arkitekter og entreprenører med sakstall."""
+    companies = db.get_companies(limit=limit)
+    return {"companies": companies, "total": len(companies)}
 
 
 @app.get("/api/cases/{identifikator}")

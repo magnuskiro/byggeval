@@ -71,3 +71,41 @@ def test_database_filtering_and_stats(temp_db):
     points = temp_db.get_map_points()
     assert len(points) == 3
     assert points[0]["latitude"] is not None
+
+
+def test_database_company_search(temp_db):
+    """Tester søk og filtrering på utførende firmaer."""
+    c1 = {
+        "identifikator": "a-comp-1",
+        "saksnummer": "2026/100",
+        "tittel": "Slagenveien 10 - 100/1 - Nybygg enebolig",
+        "dato": "01.08.2026",
+        "dokumenter": [{"identifikator": "d1", "tittel": "Søknad", "fra": ["Tun Arkitektur AS"]}]
+    }
+    c2 = {
+        "identifikator": "a-comp-2",
+        "saksnummer": "2026/101",
+        "tittel": "Fjordveien 5 - 105/2 - Tilbygg",
+        "dato": "02.08.2026",
+        "dokumenter": [{"identifikator": "d2", "tittel": "Søknad", "fra": ["Eventyrhus AS"]}]
+    }
+    
+    temp_db.save_case(ByggesakEvaluator.create_byggesak_model(c1))
+    temp_db.save_case(ByggesakEvaluator.create_byggesak_model(c2))
+
+    # Søk på firmanavn i fritekstsøk
+    cases, total = temp_db.get_cases(search="Tun Arkitektur")
+    assert total == 1
+    assert cases[0].primary_company == "Tun Arkitektur AS"
+
+    # Filtrer med company-parameter
+    cases_eventyr, total_eventyr = temp_db.get_cases(company="Eventyrhus")
+    assert total_eventyr == 1
+    assert cases_eventyr[0].primary_company == "Eventyrhus AS"
+
+    # Hent liste over firmaer
+    companies = temp_db.get_companies()
+    assert len(companies) == 2
+    company_names = [c["name"] for c in companies]
+    assert "Tun Arkitektur AS" in company_names
+    assert "Eventyrhus AS" in company_names

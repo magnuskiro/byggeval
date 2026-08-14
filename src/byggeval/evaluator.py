@@ -308,6 +308,66 @@ class ByggesakEvaluator:
             return "Gjennomgå planstatus, utnyttelsesgrad og tilknytningsplikt for vann/avløp før formell ett-trinns søknad innsendes."
         return "Ordinær saksgang etter plan- og bygningsloven § 20-1. Påse komplett ansvarsrett og nabovarsling."
 
+    @staticmethod
+    def extract_companies(raw_sak: Dict[str, Any], dokumenter: List[Dokument]) -> Tuple[Optional[str], List[str]]:
+        """
+        Ekstraherer utførende foretak, arkitekter, entreprenører og søkere fra dokumenter og sak.
+        """
+        companies_set = set()
+        all_senders = []
+
+        # 1. Hent avsendere fra dokumenter
+        for d in dokumenter:
+            for sender in d.fra:
+                if sender and isinstance(sender, str):
+                    s_clean = sender.strip()
+                    if s_clean:
+                        all_senders.append(s_clean)
+                        # Sjekk om det er et firma eller foretak
+                        if ByggesakEvaluator._is_company_name(s_clean):
+                            companies_set.add(s_clean)
+
+        # 2. Sjekk også 'fra' i rådokumenter eller saksbeskrivelse
+        for d in raw_sak.get("dokumenter", []):
+            for s in d.get("fra", []):
+                if s and isinstance(s, str) and ByggesakEvaluator._is_company_name(s.strip()):
+                    companies_set.add(s.strip())
+
+        companies_list = sorted(list(companies_set))
+        
+        # Bestem primærfirma / hovedansvarlig
+        primary_company = None
+        if companies_list:
+            primary_company = companies_list[0]
+        elif all_senders:
+            primary_company = all_senders[0]
+
+        return primary_company, companies_list
+
+    @staticmethod
+    def _is_company_name(name: str) -> bool:
+        """Sjekker om en avsenderstreng representerer et firma, foretak eller profesjonell aktør."""
+        name_lower = name.lower()
+        
+        # Kjente selskapsformer og nøkkelord
+        company_indicators = [
+            r'\bas\b', r'\ba/s\b', r'\bans\b', r'\bda\b', r'\benk\b', r'\bsf\b', r'\bhf\b',
+            'arkitekt', 'arkitektur', 'bygg', 'byggmester', 'tømrer', 'entreprenør',
+            'ingeniør', 'konsult', 'consulting', 'hus', 'invest', 'tjenester',
+            'vann & miljø', 'miljø', 'eiendom', 'bolig', 'sameie', 'borettslag',
+            'advokat', 'plan', 'geodesi', 'takst', 'prosjekt'
+        ]
+        
+        for pattern in company_indicators:
+            if re.search(pattern, name_lower):
+                return True
+                
+        # Hvis navnet har mer enn 2 ord og inneholder store forbokstaver på alle ord eller spesielle tegn
+        if len(name.split()) >= 3 and any(char in name for char in ["&", "+", "-", "/"]):
+            return True
+            
+        return False
+
     @classmethod
     def create_byggesak_model(cls, raw_sak: Dict[str, Any]) -> Byggesak:
         """Konverterer rå API-data fra Tønsberg til en fullverdig Byggesak med evaluering."""
@@ -339,6 +399,9 @@ class ByggesakEvaluator:
                 paragraf_id=d.get("paragrafID", "")
             ))
 
+        # Ekstraher firmaer og utførende foretak
+        primary_company, companies = cls.extract_companies(raw_sak, dokumenter)
+
         # Kjør evaluering
         evaluation = cls.evaluate_case(raw_sak)
 
@@ -360,6 +423,8 @@ class ByggesakEvaluator:
             status_tittel=status_tittel,
             er_ferdig=er_ferdig,
             innsyn_url=innsyn_url,
+            primary_company=primary_company,
+            companies=companies,
             address_info=address_info,
             evaluation=evaluation,
             dokumenter=dokumenter

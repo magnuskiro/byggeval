@@ -70,6 +70,10 @@ class Byggesak(BaseModel):
     er_ferdig: bool = False
     innsyn_url: Optional[str] = None
     
+    # Utførende / foretak / søker
+    primary_company: Optional[str] = None  # Hovedansvarlig firma / søker
+    companies: List[str] = Field(default_factory=list)  # Alle involverte firmaer
+    
     address_info: AddressInfo = Field(default_factory=AddressInfo)
     evaluation: Optional[EvaluationResult] = None
     dokumenter: List[Dokument] = Field(default_factory=list)

@@ -129,7 +129,7 @@
             <div class="filter-panel">
                 <div class="search-box-wrapper">
                     <i class="ri-search-line search-icon"></i>
-                    <input type="search" id="searchInput" placeholder="Søk på adresse, saksnummer, matrikkel (f.eks. 1009/47) eller tittel..." autocomplete="off">
+                    <input type="search" id="searchInput" placeholder="Søk på adresse, saksnr, matrikkel, tittel eller utførende firma (f.eks. Tun Arkitektur, Eventyrhus)..." autocomplete="off">
                     <button class="btn-clear hidden" id="btnClearSearch" title="Tøm søk"><i class="ri-close-line"></i></button>
                 </div>
 
@@ -153,6 +153,13 @@
                     </div>
 
                     <div class="filter-group">
+                        <label for="companyFilter"><i class="ri-briefcase-line"></i> Firma / Utførende</label>
+                        <select id="companyFilter" class="custom-select">
+                            <option value="all">Alle firmaer / utførende</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
                         <label for="riskFilter"><i class="ri-shield-line"></i> Risiko</label>
                         <select id="riskFilter" class="custom-select">
                             <option value="all">Alle risikonivåer</option>
@@ -168,6 +175,7 @@
                         <select id="sortFilter" class="custom-select">
                             <option value="dato_desc">Dato (nyest først)</option>
                             <option value="dato_asc">Dato (eldst først)</option>
+                            <option value="company_asc">Firma (A-Å)</option>
                             <option value="risk_desc">Høyest risikoscore</option>
                             <option value="complexity_desc">Høyest kompleksitet</option>
                             <option value="saksnummer_desc">Saksnummer</option>
@@ -198,10 +206,10 @@
                             <th>Saksnr</th>
                             <th>Dato</th>
                             <th>Adresse / Matrikkel</th>
+                            <th>Utførende / Firma</th>
                             <th>Tiltak / Tittel</th>
                             <th>Kategori</th>
                             <th>Risiko</th>
-                            <th>Kompleksitet</th>
                             <th>Dok.</th>
                             <th>Handling</th>
                         </tr>
@@ -281,6 +289,13 @@
                     <h3 class="chart-title"><i class="ri-flow-chart"></i> Saksstadium & Behandlingsløp</h3>
                     <div class="chart-wrapper-tall">
                         <canvas id="chartStage"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card full-width">
+                    <h3 class="chart-title"><i class="ri-building-4-line"></i> Mest Aktive Utførende Foretak & Arkitekter i Tønsberg</h3>
+                    <div class="chart-wrapper-tall">
+                        <canvas id="chartCompanies"></canvas>
                     </div>
                 </div>
             </div>

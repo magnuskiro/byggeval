@@ -56,6 +56,25 @@ def test_api_map_points(client):
         assert "saksnummer" in p
 
 
+def test_api_companies(client):
+    response = client.get("/api/companies")
+    assert response.status_code == 200
+    data = response.json()
+    assert "companies" in data
+    assert isinstance(data["companies"], list)
+    if len(data["companies"]) > 0:
+        c = data["companies"][0]
+        assert "name" in c
+        assert "count" in c
+
+
+def test_api_cases_company_search(client):
+    response = client.get("/api/cases?company=Arkitektur")
+    assert response.status_code == 200
+    data = response.json()
+    assert "cases" in data
+
+
 def test_serve_static_index(client):
     response = client.get("/")
     assert response.status_code == 200

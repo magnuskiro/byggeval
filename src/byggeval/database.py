@@ -42,6 +42,10 @@ class Database:
                     er_ferdig INTEGER,
                     innsyn_url TEXT,
                     
+                    -- Utførende / firma / foretak
+                    primary_company TEXT,
+                    companies_text TEXT,
+                    
                     -- Ekstraherte adressefelt
                     street_name TEXT,
                     house_number TEXT,
@@ -71,6 +75,16 @@ class Database:
                 )
             """)
 
+            # Kjør sikre migrasjoner for eksisterende databaser
+            try:
+                cursor.execute("ALTER TABLE cases ADD COLUMN primary_company TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                cursor.execute("ALTER TABLE cases ADD COLUMN companies_text TEXT")
+            except sqlite3.OperationalError:
+                pass
+
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS sync_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +100,7 @@ class Database:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_category ON cases(category)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_risk_level ON cases(risk_level)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_saksnummer ON cases(saksnummer)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_company ON cases(primary_company)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_gnr_bnr ON cases(gnr, bnr)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_stage ON cases(stage)")
             conn.commit()
@@ -112,17 +127,20 @@ class Database:
         risk_score = eval_res.risk_score if eval_res else 15
         stage = eval_res.stage if eval_res else "Under saksbehandling"
 
+        companies_str = " | ".join(case.companies) if case.companies else ""
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO cases (
                     identifikator, saksnummer, tittel, undertittel, sakstype, saks_beskrivelse,
                     dato, saksbehandler, status_tittel, er_ferdig, innsyn_url,
+                    primary_company, companies_text,
                     street_name, house_number, gnr, bnr, matrikkel, latitude, longitude,
                     category, subcategory, complexity, complexity_score, risk_level, risk_score, stage,
                     address_json, evaluation_json, dokumenter_json, raw_json,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(identifikator) DO UPDATE SET
                     saksnummer=excluded.saksnummer,
                     tittel=excluded.tittel,
@@ -134,6 +152,8 @@ class Database:
                     status_tittel=excluded.status_tittel,
                     er_ferdig=excluded.er_ferdig,
                     innsyn_url=excluded.innsyn_url,
+                    primary_company=excluded.primary_company,
+                    companies_text=excluded.companies_text,
                     street_name=excluded.street_name,
                     house_number=excluded.house_number,
                     gnr=excluded.gnr,
@@ -164,6 +184,8 @@ class Database:
                 case.status_tittel,
                 1 if case.er_ferdig else 0,
                 case.innsyn_url,
+                case.primary_company,
+                companies_str,
                 case.address_info.street_name,
                 case.address_info.house_number,
                 case.address_info.gnr,
@@ -219,6 +241,7 @@ class Database:
         category: Optional[str] = None,
         risk_level: Optional[str] = None,
         stage: Optional[str] = None,
+        company: Optional[str] = None,
         sort_by: str = "dato_desc",
         limit: int = 50,
         offset: int = 0
@@ -229,8 +252,8 @@ class Database:
 
         if search:
             search_param = f"%{search.strip()}%"
-            where_clauses.append("(tittel LIKE ? OR saksnummer LIKE ? OR street_name LIKE ? OR matrikkel LIKE ? OR saksbehandler LIKE ?)")
-            params.extend([search_param, search_param, search_param, search_param, search_param])
+            where_clauses.append("(tittel LIKE ? OR saksnummer LIKE ? OR street_name LIKE ? OR matrikkel LIKE ? OR saksbehandler LIKE ? OR primary_company LIKE ? OR companies_text LIKE ?)")
+            params.extend([search_param, search_param, search_param, search_param, search_param, search_param, search_param])
 
         if category and category != "all":
             where_clauses.append("category = ?")
@@ -243,6 +266,11 @@ class Database:
         if stage and stage != "all":
             where_clauses.append("stage = ?")
             params.append(stage)
+
+        if company and company != "all":
+            comp_param = f"%{company.strip()}%"
+            where_clauses.append("(primary_company LIKE ? OR companies_text LIKE ?)")
+            params.extend([comp_param, comp_param])
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -258,6 +286,8 @@ class Database:
             order_sql = "ORDER BY complexity_score DESC"
         elif sort_by == "saksnummer_desc":
             order_sql = "ORDER BY saksnummer DESC"
+        elif sort_by == "company_asc":
+            order_sql = "ORDER BY primary_company ASC"
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -275,13 +305,28 @@ class Database:
             cases = [self._row_to_case(row) for row in rows]
             return cases, total
 
+    def get_companies(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Henter liste over unike utførende firmaer og foretak med antall saker."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT primary_company as name, COUNT(*) as count
+                FROM cases
+                WHERE primary_company IS NOT NULL AND TRIM(primary_company) != ''
+                GROUP BY primary_company
+                ORDER BY count DESC, name ASC
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
     def get_map_points(self) -> List[Dict[str, Any]]:
         """Henter lette punkter for kartvisning."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT identifikator, saksnummer, tittel, dato, street_name, house_number, matrikkel,
-                       latitude, longitude, category, subcategory, risk_level, risk_score, stage
+                       primary_company, latitude, longitude, category, subcategory, risk_level, risk_score, stage
                 FROM cases
                 WHERE latitude IS NOT NULL AND longitude IS NOT NULL
                 ORDER BY substr(dato, 7, 4) || substr(dato, 4, 2) || substr(dato, 1, 2) DESC
@@ -332,6 +377,17 @@ class Database:
             """)
             stage_breakdown = [dict(row) for row in cursor.fetchall()]
 
+            # Topp Utførende Firmaer
+            cursor.execute("""
+                SELECT primary_company as name, COUNT(*) as count
+                FROM cases
+                WHERE primary_company IS NOT NULL AND TRIM(primary_company) != ''
+                GROUP BY primary_company
+                ORDER BY count DESC
+                LIMIT 10
+            """)
+            top_companies = [dict(row) for row in cursor.fetchall()]
+
             # Siste synkronisering
             cursor.execute("SELECT * FROM sync_history ORDER BY id DESC LIMIT 1")
             sync_row = cursor.fetchone()
@@ -345,6 +401,7 @@ class Database:
                 "category_breakdown": category_breakdown,
                 "risk_breakdown": risk_breakdown,
                 "stage_breakdown": stage_breakdown,
+                "top_companies": top_companies,
                 "last_sync": last_sync
             }
 
@@ -366,6 +423,11 @@ class Database:
 
         dokumenter = [Dokument(**d) for d in docs_raw]
 
+        keys = row.keys()
+        companies_raw = row["companies_text"] if ("companies_text" in keys and row["companies_text"]) else ""
+        companies_list = [c.strip() for c in companies_raw.split("|") if c.strip()] if companies_raw else []
+        primary_company = row["primary_company"] if ("primary_company" in keys) else None
+
         return Byggesak(
             identifikator=row["identifikator"],
             saksnummer=row["saksnummer"],
@@ -378,6 +440,8 @@ class Database:
             status_tittel=row["status_tittel"] or "Under behandling",
             er_ferdig=bool(row["er_ferdig"]),
             innsyn_url=row["innsyn_url"],
+            primary_company=primary_company,
+            companies=companies_list,
             address_info=AddressInfo(**address_dict),
             evaluation=EvaluationResult(**eval_dict) if eval_dict else None,
             dokumenter=dokumenter,
