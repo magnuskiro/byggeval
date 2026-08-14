@@ -334,11 +334,14 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        // 1. Render Cards
-        elements.casesContainer.innerHTML = state.cases.map(c => createCaseCardHtml(c)).join("");
-
-        // 2. Render Table Rows
-        elements.casesTableBody.innerHTML = state.cases.map(c => createTableRowHtml(c)).join("");
+        // Render kun aktiv visningsmodus for å spare CPU og minne
+        if (state.viewMode === "cards") {
+            elements.casesContainer.innerHTML = state.cases.map(c => createCaseCardHtml(c)).join("");
+            elements.casesTableBody.innerHTML = "";
+        } else {
+            elements.casesTableBody.innerHTML = state.cases.map(c => createTableRowHtml(c)).join("");
+            elements.casesContainer.innerHTML = "";
+        }
 
         // Add Click Handlers for opening drawer
         document.querySelectorAll(".case-card, .btn-table-detail").forEach(el => {
@@ -1083,6 +1086,7 @@ document.addEventListener("DOMContentLoaded", () => {
         elements.btnViewTable.classList.remove("active");
         elements.casesContainer.classList.remove("hidden");
         elements.tableContainer.classList.add("hidden");
+        renderCases();
     });
 
     elements.btnViewTable.addEventListener("click", () => {
@@ -1091,6 +1095,7 @@ document.addEventListener("DOMContentLoaded", () => {
         elements.btnViewCards.classList.remove("active");
         elements.casesContainer.classList.add("hidden");
         elements.tableContainer.classList.remove("hidden");
+        renderCases();
     });
 
     // Main Tab Navigation
