@@ -394,63 +394,96 @@ class Database:
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
-    def get_statistics(self) -> Dict[str, Any]:
-        """Genererer helhetlig statistikk og analyse for dashboardet."""
+    def get_statistics(self, company: Optional[str] = None) -> Dict[str, Any]:
+        """Genererer helhetlig statistikk og analyse for dashboardet, med støtte for foretaksfiltrering."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
+            where_sql = ""
+            base_params = []
+            if company and company.strip() and company != "all":
+                c_clean = company.strip()
+                where_sql = " WHERE (primary_company = ? OR companies_text LIKE ?)"
+                base_params = [c_clean, f"%{c_clean}%"]
+
+            def add_filter(extra_condition: str) -> Tuple[str, list]:
+                if where_sql:
+                    return f"{where_sql} AND ({extra_condition})", list(base_params)
+                else:
+                    return f" WHERE {extra_condition}", []
+
             # Totaler
-            cursor.execute("SELECT COUNT(*) FROM cases")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{where_sql}", base_params)
             total_cases = cursor.fetchone()[0]
 
-            cursor.execute("SELECT COUNT(*) FROM cases WHERE er_ferdig = 1 OR stage = 'Ferdigbehandlet'")
+            sql_comp, p_comp = add_filter("er_ferdig = 1 OR stage = 'Ferdigbehandlet'")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{sql_comp}", p_comp)
             completed_cases = cursor.fetchone()[0]
 
-            cursor.execute("SELECT COUNT(*) FROM cases WHERE risk_level IN ('Høy', 'Kritisk')")
+            sql_risk, p_risk = add_filter("risk_level IN ('Høy', 'Kritisk')")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{sql_risk}", p_risk)
             high_risk_cases = cursor.fetchone()[0]
 
             # Friststatus
-            cursor.execute("SELECT COUNT(*) FROM cases WHERE deadline_status = 'Fristoverskridelse'")
+            sql_overdue, p_overdue = add_filter("deadline_status = 'Fristoverskridelse'")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{sql_overdue}", p_overdue)
             overdue_cases = cursor.fetchone()[0]
 
-            cursor.execute("SELECT COUNT(*) FROM cases WHERE deadline_status = 'Nærmer seg frist'")
+            sql_urgent, p_urgent = add_filter("deadline_status = 'Nærmer seg frist' OR deadline_status = 'Frist stanset (Mangelbrev)'")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{sql_urgent}", p_urgent)
             urgent_cases = cursor.fetchone()[0]
 
+            # Vedtaksstatistikk fra kommunen
+            sql_approved, p_approved = add_filter("official_decision_type LIKE '%Innvilget%' OR official_decision_type LIKE '%Ferdigattest%'")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{sql_approved}", p_approved)
+            approved_cases = cursor.fetchone()[0]
+
+            sql_rejected, p_rejected = add_filter("official_decision_type LIKE '%Avslått%' OR official_decision_type LIKE '%Avslag%'")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{sql_rejected}", p_rejected)
+            rejected_cases = cursor.fetchone()[0]
+
+            decided_total = approved_cases + rejected_cases
+            approval_rate = round((approved_cases / decided_total * 100), 1) if decided_total > 0 else None
+
             # Fristfordeling
-            cursor.execute("""
+            sql_dl, p_dl = add_filter("deadline_status IS NOT NULL")
+            cursor.execute(f"""
                 SELECT deadline_status, COUNT(*) as count
                 FROM cases
-                WHERE deadline_status IS NOT NULL
+                {sql_dl}
                 GROUP BY deadline_status
                 ORDER BY count DESC
-            """)
+            """, p_dl)
             deadline_breakdown = [dict(row) for row in cursor.fetchall()]
 
             # Kategorifordeling
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT category, COUNT(*) as count 
                 FROM cases 
+                {where_sql}
                 GROUP BY category 
                 ORDER BY count DESC
-            """)
+            """, base_params)
             category_breakdown = [dict(row) for row in cursor.fetchall()]
 
             # Risikofordeling
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT risk_level, COUNT(*) as count 
                 FROM cases 
+                {where_sql}
                 GROUP BY risk_level 
                 ORDER BY count DESC
-            """)
+            """, base_params)
             risk_breakdown = [dict(row) for row in cursor.fetchall()]
 
             # Stadier
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT stage, COUNT(*) as count 
                 FROM cases 
+                {where_sql}
                 GROUP BY stage 
                 ORDER BY count DESC
-            """)
+            """, base_params)
             stage_breakdown = [dict(row) for row in cursor.fetchall()]
 
             # Topp Utførende Firmaer
@@ -470,12 +503,16 @@ class Database:
             last_sync = dict(sync_row) if sync_row else None
 
             return {
+                "selected_company": company if (company and company != "all") else None,
                 "total_cases": total_cases,
                 "active_cases": total_cases - completed_cases,
                 "completed_cases": completed_cases,
                 "high_risk_cases": high_risk_cases,
                 "overdue_cases": overdue_cases,
                 "urgent_cases": urgent_cases,
+                "approved_cases": approved_cases,
+                "rejected_cases": rejected_cases,
+                "approval_rate": approval_rate,
                 "deadline_breakdown": deadline_breakdown,
                 "category_breakdown": category_breakdown,
                 "risk_breakdown": risk_breakdown,

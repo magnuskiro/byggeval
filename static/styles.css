@@ -1141,6 +1141,52 @@ body {
     height: 340px;
 }
 
+/* Analytics Company Filter Header */
+.analytics-filter-header {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 24px;
+    margin-bottom: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    box-shadow: var(--shadow-sm);
+}
+
+.analytics-heading {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.analytics-subheading {
+    font-size: 13px;
+    color: var(--text-muted);
+    max-width: 600px;
+    line-height: 1.4;
+}
+
+.analytics-controls {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.analytics-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
 /* ==========================================================================
    Modal & Drawer Styles
    ========================================================================== */

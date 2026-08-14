@@ -27,6 +27,14 @@ def test_api_stats(client):
     assert "risk_breakdown" in data
 
 
+def test_api_stats_company_filter(client):
+    response = client.get("/api/stats?company=KB%20Arkitekter%20AS")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_cases" in data
+    assert data["selected_company"] == "KB Arkitekter AS"
+
+
 def test_api_cases_list(client):
     response = client.get("/api/cases?limit=10")
     assert response.status_code == 200

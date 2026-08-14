@@ -160,9 +160,9 @@ def get_case_detail(identifikator: str):
 
 
 @app.get("/api/stats")
-def get_statistics():
-    """Henter samlet statistikk og aggregeringer for dashboardet."""
-    stats = db.get_statistics()
+def get_statistics(company: Optional[str] = Query(None, description="Filtrer statistikk på spesifikt utførende foretak / søker")):
+    """Henter samlet statistikk og aggregeringer for dashboardet, med støtte for foretaksfiltrering."""
+    stats = db.get_statistics(company=company)
     stats["sync_state"] = sync_state
     return stats
 

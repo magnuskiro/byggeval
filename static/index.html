@@ -308,6 +308,65 @@
 
         <!-- View: Analytics & Charts -->
         <main class="tab-pane hidden" id="pane-analytics">
+            <!-- Foretaksfiltrering for Statistikk -->
+            <div class="analytics-filter-header">
+                <div class="analytics-title-group">
+                    <h2 class="analytics-heading"><i class="ri-bar-chart-box-line"></i> Statistikk & Foretaksanalyse</h2>
+                    <p class="analytics-subheading">Filtrer statistikk på spesifikt utførende foretak, arkitekt eller søker for å se godkjenningsrate, risikoprofil og saksfordeling.</p>
+                </div>
+
+                <div class="analytics-controls">
+                    <div class="filter-group">
+                        <label for="analyticsCompanyFilter"><i class="ri-briefcase-line"></i> Filtrer på foretak / søker:</label>
+                        <select id="analyticsCompanyFilter" class="custom-select" style="min-width: 260px; font-weight: 600;">
+                            <option value="all">📊 Alle foretak & søkere</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="btnResetAnalyticsFilter" style="align-self: flex-end;">
+                        <i class="ri-refresh-line"></i> Nullstill
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dynamiske Nøkkeltall for valgt foretak -->
+            <div class="analytics-kpi-row" id="analyticsKpiRow">
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-label">Saker for valgt utvalg</span>
+                        <div class="kpi-icon icon-blue"><i class="ri-file-list-3-line"></i></div>
+                    </div>
+                    <div class="kpi-value" id="analyticsKpiTotal">0</div>
+                    <div class="kpi-subtext" id="analyticsKpiScopeLabel">Alle foretak i Tønsberg</div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-label">Godkjenningsrate (Vedtak)</span>
+                        <div class="kpi-icon icon-green"><i class="ri-checkbox-circle-line"></i></div>
+                    </div>
+                    <div class="kpi-value" id="analyticsKpiApprovalRate">–</div>
+                    <div class="kpi-subtext" id="analyticsKpiApprovalSubtext">Andel innvilget av kommunen</div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-label">Formelle Vedtak (Kommunen)</span>
+                        <div class="kpi-icon icon-cyan"><i class="ri-government-line"></i></div>
+                    </div>
+                    <div class="kpi-value" id="analyticsKpiDecisions">0</div>
+                    <div class="kpi-subtext" id="analyticsKpiDecisionsSubtext">Innvilget: 0 &bull; Avslått: 0</div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <span class="kpi-label">Høy / Kritisk Risiko</span>
+                        <div class="kpi-icon icon-red"><i class="ri-alert-line"></i></div>
+                    </div>
+                    <div class="kpi-value" id="analyticsKpiHighRisk">0</div>
+                    <div class="kpi-subtext" id="analyticsKpiHighRiskPct">0% av sakene</div>
+                </div>
+            </div>
+
             <div class="analytics-grid">
                 <div class="chart-card">
                     <h3 class="chart-title"><i class="ri-pie-chart-line"></i> Fordeling per Tiltakskategori</h3>
@@ -317,7 +376,7 @@
                 </div>
 
                 <div class="chart-card">
-                    <h3 class="chart-title"><i class="ri-shield-check-line"></i> Risikoprofil i Tønsberg</h3>
+                    <h3 class="chart-title"><i class="ri-shield-check-line"></i> Risikoprofil & Kompleksitet</h3>
                     <div class="chart-wrapper">
                         <canvas id="chartRisk"></canvas>
                     </div>
@@ -330,7 +389,7 @@
                     </div>
                 </div>
 
-                <div class="chart-card full-width">
+                <div class="chart-card full-width" id="cardTopCompanies">
                     <h3 class="chart-title"><i class="ri-building-4-line"></i> Mest Aktive Utførende Foretak & Arkitekter i Tønsberg</h3>
                     <div class="chart-wrapper-tall">
                         <canvas id="chartCompanies"></canvas>

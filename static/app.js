@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedDeadline: "all",
         selectedRisk: "all",
         selectedSort: "dato_desc",
+        analyticsCompany: "all",
         viewMode: "cards", // 'cards' | 'table'
         activeTab: "explorer", // 'explorer' | 'map' | 'analytics'
         map: null,
@@ -46,6 +47,19 @@ document.addEventListener("DOMContentLoaded", () => {
         deadlineFilter: document.getElementById("deadlineFilter"),
         riskFilter: document.getElementById("riskFilter"),
         sortFilter: document.getElementById("sortFilter"),
+
+        // Analytics Pane Elements
+        analyticsCompanyFilter: document.getElementById("analyticsCompanyFilter"),
+        btnResetAnalyticsFilter: document.getElementById("btnResetAnalyticsFilter"),
+        analyticsKpiTotal: document.getElementById("analyticsKpiTotal"),
+        analyticsKpiScopeLabel: document.getElementById("analyticsKpiScopeLabel"),
+        analyticsKpiApprovalRate: document.getElementById("analyticsKpiApprovalRate"),
+        analyticsKpiApprovalSubtext: document.getElementById("analyticsKpiApprovalSubtext"),
+        analyticsKpiDecisions: document.getElementById("analyticsKpiDecisions"),
+        analyticsKpiDecisionsSubtext: document.getElementById("analyticsKpiDecisionsSubtext"),
+        analyticsKpiHighRisk: document.getElementById("analyticsKpiHighRisk"),
+        analyticsKpiHighRiskPct: document.getElementById("analyticsKpiHighRiskPct"),
+        cardTopCompanies: document.getElementById("cardTopCompanies"),
 
         // Containers
         casesContainer: document.getElementById("casesContainer"),
@@ -92,19 +106,60 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function fetchStats() {
         try {
-            const res = await fetch("/api/stats");
+            const params = new URLSearchParams();
+            if (state.analyticsCompany && state.analyticsCompany !== "all") {
+                params.append("company", state.analyticsCompany);
+            }
+
+            const url = params.toString() ? `/api/stats?${params.toString()}` : "/api/stats";
+            const res = await fetch(url);
             const data = await res.json();
 
-            // Update KPIs
-            elements.kpiTotal.textContent = (data.total_cases || 0).toLocaleString("no-NO");
-            elements.kpiActive.textContent = (data.active_cases || 0).toLocaleString("no-NO");
-            elements.kpiHighRisk.textContent = (data.high_risk_cases || 0).toLocaleString("no-NO");
-            if (elements.kpiOverdue) {
-                elements.kpiOverdue.textContent = (data.overdue_cases || 0).toLocaleString("no-NO");
+            // Hvis ingen foretaksfilter er aktivt, oppdater hoved-KPIer
+            if (!state.analyticsCompany || state.analyticsCompany === "all") {
+                elements.kpiTotal.textContent = (data.total_cases || 0).toLocaleString("no-NO");
+                elements.kpiActive.textContent = (data.active_cases || 0).toLocaleString("no-NO");
+                elements.kpiHighRisk.textContent = (data.high_risk_cases || 0).toLocaleString("no-NO");
+                if (elements.kpiOverdue) {
+                    elements.kpiOverdue.textContent = (data.overdue_cases || 0).toLocaleString("no-NO");
+                }
+                elements.kpiCompleted.textContent = (data.completed_cases || 0).toLocaleString("no-NO");
             }
-            elements.kpiCompleted.textContent = (data.completed_cases || 0).toLocaleString("no-NO");
 
-            // Last sync text
+            // Oppdater dynamiske Analytics KPIer for valgt foretak
+            if (elements.analyticsKpiTotal) {
+                elements.analyticsKpiTotal.textContent = (data.total_cases || 0).toLocaleString("no-NO");
+            }
+            if (elements.analyticsKpiScopeLabel) {
+                elements.analyticsKpiScopeLabel.textContent = data.selected_company ? `Foretak: ${data.selected_company}` : 'Alle foretak i Tønsberg';
+            }
+            if (elements.analyticsKpiApprovalRate) {
+                if (data.approval_rate !== null && data.approval_rate !== undefined) {
+                    elements.analyticsKpiApprovalRate.textContent = `${data.approval_rate}%`;
+                } else {
+                    elements.analyticsKpiApprovalRate.textContent = "Ingen vedtak";
+                }
+            }
+            if (elements.analyticsKpiApprovalSubtext) {
+                const totalDecisions = (data.approved_cases || 0) + (data.rejected_cases || 0);
+                elements.analyticsKpiApprovalSubtext.textContent = totalDecisions > 0 ? `${data.approved_cases || 0} av ${totalDecisions} vedtak innvilget` : "Ingen formelle vedtak registrert ennå";
+            }
+            if (elements.analyticsKpiDecisions) {
+                const totalDecisions = (data.approved_cases || 0) + (data.rejected_cases || 0);
+                elements.analyticsKpiDecisions.textContent = totalDecisions.toLocaleString("no-NO");
+            }
+            if (elements.analyticsKpiDecisionsSubtext) {
+                elements.analyticsKpiDecisionsSubtext.innerHTML = `🟢 Innvilget: <strong>${data.approved_cases || 0}</strong> &bull; 🔴 Avslått: <strong>${data.rejected_cases || 0}</strong>`;
+            }
+            if (elements.analyticsKpiHighRisk) {
+                elements.analyticsKpiHighRisk.textContent = (data.high_risk_cases || 0).toLocaleString("no-NO");
+            }
+            if (elements.analyticsKpiHighRiskPct) {
+                const pct = data.total_cases > 0 ? Math.round((data.high_risk_cases / data.total_cases) * 100) : 0;
+                elements.analyticsKpiHighRiskPct.textContent = `${pct}% av sakene vurdert til høy/kritisk risiko`;
+            }
+
+            // Siste synkronisering
             if (data.last_sync) {
                 const syncDate = new Date(data.last_sync.timestamp);
                 elements.lastSyncInfo.innerHTML = `<i class="ri-history-line"></i> Sist synkronisert: ${syncDate.toLocaleDateString("no-NO")} kl. ${syncDate.toLocaleTimeString("no-NO", {hour: '2-digit', minute:'2-digit'})}`;
@@ -112,10 +167,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 elements.lastSyncInfo.innerHTML = `<i class="ri-history-line"></i> Database klar`;
             }
 
-            // Update Charts if on analytics tab
-            if (state.activeTab === "analytics") {
-                renderCharts(data);
-            }
+            // Render grafer med oppdaterte foretaksdata
+            renderCharts(data);
         } catch (err) {
             console.error("Feil ved henting av statistikk:", err);
         }
@@ -127,10 +180,17 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await res.json();
             state.companies = data.companies || [];
 
-            // Populate company filter select
+            // 1. Populate explorer company filter
             const currentSelected = state.selectedCompany;
             elements.companyFilter.innerHTML = `<option value="all">Alle firmaer / utførende (${state.companies.length})</option>` +
                 state.companies.map(c => `<option value="${escapeHtml(c.name)}" ${currentSelected === c.name ? 'selected' : ''}>${escapeHtml(c.name)} (${c.count})</option>`).join("");
+
+            // 2. Populate analytics company filter
+            if (elements.analyticsCompanyFilter) {
+                const curAnalytics = state.analyticsCompany;
+                elements.analyticsCompanyFilter.innerHTML = `<option value="all">📊 Alle foretak & søkere (${state.companies.length})</option>` +
+                    state.companies.map(c => `<option value="${escapeHtml(c.name)}" ${curAnalytics === c.name ? 'selected' : ''}>${escapeHtml(c.name)} (${c.count} saker)</option>`).join("");
+            }
         } catch (err) {
             console.error("Feil ved henting av firmaer:", err);
         }
@@ -1060,6 +1120,24 @@ document.addEventListener("DOMContentLoaded", () => {
         state.selectedSort = e.target.value;
         fetchCases();
     });
+
+    // Analytics Company Filter
+    if (elements.analyticsCompanyFilter) {
+        elements.analyticsCompanyFilter.addEventListener("change", (e) => {
+            state.analyticsCompany = e.target.value;
+            fetchStats();
+        });
+    }
+
+    if (elements.btnResetAnalyticsFilter) {
+        elements.btnResetAnalyticsFilter.addEventListener("click", () => {
+            state.analyticsCompany = "all";
+            if (elements.analyticsCompanyFilter) {
+                elements.analyticsCompanyFilter.value = "all";
+            }
+            fetchStats();
+        });
+    }
 
     // Pagination
     elements.btnPrevPage.addEventListener("click", () => {

@@ -540,6 +540,32 @@ class ByggesakEvaluator:
             for s in d.get("fra", []):
                 if s and isinstance(s, str) and ByggesakEvaluator._is_company_name(s.strip()):
                     companies_set.add(s.strip())
+            # Sjekk tittel på dokumenter for firmanavn på slutten (f.eks. "... - Firma AS")
+            doc_title = d.get("tittel", "") if isinstance(d, dict) else getattr(d, "tittel", "")
+            if " - " in doc_title:
+                candidate = doc_title.split(" - ")[-1].strip()
+                if ByggesakEvaluator._is_company_name(candidate) and len(candidate) > 3:
+                    companies_set.add(candidate)
+            # Sjekk "fra [Firma AS]" i tittel
+            fra_match = re.search(r'\bfra\s+([A-ZÆØÅ][A-Za-zæøå0-9\s&+\.\-]+?(?:\s+AS|\s+A/S|\s+ANS|\s+DA|\s+ENK|\s+Arkitekter|\s+Bygg|\s+Eiendom)?)(?:\s+på\s+vegne|\s*$|\s*-)', doc_title)
+            if fra_match:
+                candidate = fra_match.group(1).strip()
+                if ByggesakEvaluator._is_company_name(candidate):
+                    companies_set.add(candidate)
+
+        # 3. Sjekk sakstittel og undertittel
+        for t in [raw_sak.get("tittel", ""), raw_sak.get("undertittel", "")]:
+            if not t:
+                continue
+            if " - " in t:
+                candidate = t.split(" - ")[-1].strip()
+                if ByggesakEvaluator._is_company_name(candidate) and len(candidate) > 3:
+                    companies_set.add(candidate)
+            fra_match = re.search(r'\bfra\s+([A-ZÆØÅ][A-Za-zæøå0-9\s&+\.\-]+?(?:\s+AS|\s+A/S|\s+ANS|\s+DA|\s+ENK|\s+Arkitekter|\s+Bygg|\s+Eiendom)?)(?:\s+på\s+vegne|\s*$|\s*-)', t)
+            if fra_match:
+                candidate = fra_match.group(1).strip()
+                if ByggesakEvaluator._is_company_name(candidate):
+                    companies_set.add(candidate)
 
         companies_list = sorted(list(companies_set))
         
@@ -555,25 +581,36 @@ class ByggesakEvaluator:
     @staticmethod
     def _is_company_name(name: str) -> bool:
         """Sjekker om en avsenderstreng representerer et firma, foretak eller profesjonell aktør."""
-        name_lower = name.lower()
+        name_lower = name.lower().strip()
+        
+        # Ignorer generiske byggetiltaksord
+        generic_terms = [
+            "nybygg", "enebolig", "fritidsbolig", "tilbygg", "påbygg", "garasje", "bruksendring",
+            "fasadeendring", "redskapsbod", "uthus", "riving", "sprinkleranlegg", "støttemur",
+            "forhåndskonferanse", "dispensasjon", "rammetillatelse", "søknad", "klage"
+        ]
+        if any(name_lower == g or name_lower.startswith(g + " ") for g in generic_terms):
+            # Med mindre det eksplisitt inneholder AS / Byggmester / Arkitekt etc
+            if not any(k in name_lower for k in [" as", " a/s", "arkitekt", "byggmester", "entreprenør"]):
+                return False
         
         # Kjente selskapsformer og nøkkelord
         company_indicators = [
             r'\bas\b', r'\ba/s\b', r'\bans\b', r'\bda\b', r'\benk\b', r'\bsf\b', r'\bhf\b',
-            'arkitekt', 'arkitektur', 'bygg', 'byggmester', 'tømrer', 'entreprenør',
-            'ingeniør', 'konsult', 'consulting', 'hus', 'invest', 'tjenester',
-            'vann & miljø', 'miljø', 'eiendom', 'bolig', 'sameie', 'borettslag',
-            'advokat', 'plan', 'geodesi', 'takst', 'prosjekt'
+            'arkitekt', 'arkitektur', 'byggmester', 'tømrer', 'entreprenør',
+            'ingeniør', 'konsult', 'consulting', 'advokat', 'geodesi', 'takst'
         ]
         
         for pattern in company_indicators:
             if re.search(pattern, name_lower):
                 return True
                 
-        # Hvis navnet har mer enn 2 ord og inneholder store forbokstaver på alle ord eller spesielle tegn
-        if len(name.split()) >= 3 and any(char in name for char in ["&", "+", "-", "/"]):
-            return True
-            
+        # Sammensatte firmanavn med bygg/eiendom/hus
+        if len(name.split()) >= 2:
+            if any(w in name_lower for w in ["bygg", "eiendom", "hus", "prosjekt", "miljø", "invest"]):
+                if not any(g in name_lower for g in ["ny enebolig", "nytt bolighus", "nybygg"]):
+                    return True
+
         return False
 
     @classmethod

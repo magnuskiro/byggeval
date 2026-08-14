@@ -109,3 +109,13 @@ def test_database_company_search(temp_db):
     company_names = [c["name"] for c in companies]
     assert "Tun Arkitektur AS" in company_names
     assert "Eventyrhus AS" in company_names
+
+    # Test foretaksspesifikk statistikk
+    stats_tun = temp_db.get_statistics(company="Tun Arkitektur AS")
+    assert stats_tun["total_cases"] == 1
+    assert stats_tun["selected_company"] == "Tun Arkitektur AS"
+    assert stats_tun["category_breakdown"][0]["category"] == "Nybygg"
+
+    stats_all = temp_db.get_statistics()
+    assert stats_all["total_cases"] == 2
+    assert stats_all["selected_company"] is None
