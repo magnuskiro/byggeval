@@ -103,17 +103,19 @@ def get_cases(
     risk_level: Optional[str] = Query(None, description="Risikonivå (Lav, Moderat, Høy, Kritisk)"),
     stage: Optional[str] = Query(None, description="Saksstadium"),
     company: Optional[str] = Query(None, description="Firma / utførende foretak / søker"),
-    sort_by: str = Query("dato_desc", description="Sortering: dato_desc, dato_asc, risk_desc, complexity_desc, saksnummer_desc, company_asc"),
+    deadline_status: Optional[str] = Query(None, description="Friststatus: God tid, Nærmer seg frist, Fristoverskridelse, Vedtatt / Avsluttet"),
+    sort_by: str = Query("dato_desc", description="Sortering: dato_desc, dato_asc, deadline_asc, risk_desc, complexity_desc, saksnummer_desc, company_asc"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0)
 ):
-    """Henter en liste over byggesaker med støtte for søk, filtrering på firma/kategori/risiko og paginering."""
+    """Henter en liste over byggesaker med støtte for søk, filtrering på firma/kategori/risiko/frister og paginering."""
     cases, total = db.get_cases(
         search=search,
         category=category,
         risk_level=risk_level,
         stage=stage,
         company=company,
+        deadline_status=deadline_status,
         sort_by=sort_by,
         limit=limit,
         offset=offset

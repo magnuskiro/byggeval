@@ -168,6 +168,15 @@ class ByggesakEvaluator:
         # Bestem saksstadium
         stage = cls._determine_stage(sak_data, all_text_lower)
 
+        # Beregn lovpålagte saksbehandlingsfrister og gjenværende tid (pbl § 21-7 / SAK10)
+        deadline_info = cls._calculate_deadlines(
+            sak_data.get("dato"),
+            category=category,
+            subcategory=subcategory,
+            flags=flags,
+            stage=stage
+        )
+
         # Generer norsk sammendrag og anbefaling
         summary = cls._generate_summary(title, category, subcategory, risk_level, risk_factors, stage)
         recommendation = cls._generate_recommendation(category, risk_factors, stage)
@@ -184,8 +193,93 @@ class ByggesakEvaluator:
             stage=stage,
             summary=summary,
             recommendation=recommendation,
-            days_in_process=days_in_process
+            days_in_process=days_in_process,
+            statutory_deadline_weeks=deadline_info["weeks"],
+            statutory_deadline_days=deadline_info["days"],
+            deadline_date=deadline_info["deadline_date"],
+            days_remaining=deadline_info["days_remaining"],
+            deadline_status=deadline_info["deadline_status"],
+            legal_basis=deadline_info["legal_basis"]
         )
+
+    @classmethod
+    def _calculate_deadlines(
+        cls,
+        dato_str: Optional[str],
+        category: str,
+        subcategory: Optional[str],
+        flags: List[str],
+        stage: str
+    ) -> Dict[str, Any]:
+        """
+        Beregner lovpålagt saksbehandlingsfrist etter Plan- og bygningsloven § 21-7 og SAK10.
+        - 3 uker: Enkle tiltak i tråd med plan uten dispensasjon / naboprotest (SAK10 § 7-1)
+        - 12 uker: Tiltak med dispensasjoner, rammetillatelser, sektormyndigheter (SAK10 § 7-2)
+        - 3 uker: Igangsettingstillatelse og ferdigattest (SAK10 § 7-3 / § 7-4)
+        - 2 uker: Forhåndskonferanse (SAK10 § 7-5)
+        """
+        weeks = 12
+        days = 84
+        legal_basis = "Plan- og bygningsloven § 21-7 4. ledd (12-ukers standardfrist for ordinær byggesak)"
+
+        if stage == "Forhåndskonferanse":
+            weeks = 2
+            days = 14
+            legal_basis = "Plan- og bygningsloven § 21-1 / SAK10 § 7-5 (2-ukers frist for avholdelse av forhåndskonferanse)"
+        elif stage in ["Igangsettingstillatelse", "Ferdigattest omsøkt/utstedt"]:
+            weeks = 3
+            days = 21
+            legal_basis = "Plan- og bygningsloven § 21-7 2. ledd / SAK10 § 7-3/4 (3-ukers frist for igangsetting/ferdigattest)"
+        elif (
+            category in ["Tilbygg & Påbygg", "Garasje & Uthus", "Fasadeendring", "Riving", "Bruksendring"]
+            and "dispensasjon" not in flags
+            and "nabokonflikt" not in flags
+            and "vernesone" not in flags
+            and "geofare" not in flags
+            and "utslipp_va" not in flags
+        ):
+            weeks = 3
+            days = 21
+            legal_basis = "Plan- og bygningsloven § 21-7 1. ledd / SAK10 § 7-1 (3-ukers frist: kurant tiltak i tråd med plan uten dispensasjoner)"
+        elif "dispensasjon" in flags or "vernesone" in flags:
+            weeks = 12
+            days = 84
+            legal_basis = "Plan- og bygningsloven § 21-7 4. ledd (12-ukers frist: krever dispensasjonsvedtak etter pbl kap 19)"
+
+        deadline_date = None
+        days_remaining = None
+        deadline_status = "God tid"
+
+        if dato_str:
+            try:
+                dt = datetime.strptime(dato_str.strip(), "%d.%m.%Y")
+                from datetime import timedelta
+                deadline_dt = dt + timedelta(days=days)
+                deadline_date = deadline_dt.strftime("%d.%m.%Y")
+                
+                # Beregn gjenværende dager mot dagens dato
+                delta = (deadline_dt.date() - datetime.now().date()).days
+                days_remaining = delta
+
+                if stage in ["Vedtatt / Tillatelse gitt", "Ferdigbehandlet"]:
+                    deadline_status = "Vedtatt / Avsluttet"
+                elif days_remaining < 0:
+                    deadline_status = "Fristoverskridelse"
+                elif days_remaining <= 14:
+                    deadline_status = "Nærmer seg frist"
+                else:
+                    deadline_status = "God tid"
+            except Exception:
+                pass
+
+        return {
+            "weeks": weeks,
+            "days": days,
+            "deadline_date": deadline_date,
+            "days_remaining": days_remaining,
+            "deadline_status": deadline_status,
+            "legal_basis": legal_basis
+        }
 
     @staticmethod
     def _categorize(text: str, title: str) -> Tuple[str, Optional[str]]:

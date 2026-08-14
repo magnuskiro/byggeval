@@ -124,3 +124,31 @@ def test_create_byggesak_model():
     assert case.dokumenter[0].fra == ["Tun Arkitektur AS"]
     assert case.primary_company == "Tun Arkitektur AS"
     assert "Tun Arkitektur AS" in case.companies
+    assert case.evaluation.statutory_deadline_weeks in [3, 12]
+    assert case.evaluation.deadline_status is not None
+
+
+def test_statutory_deadlines():
+    """Tester beregning av 3-ukers og 12-ukers frister etter pbl § 21-7."""
+    # 1. Enkelt kurant tilbygg (3 ukers frist)
+    s1 = {
+        "dato": "10.08.2026",
+        "tittel": "Kirkeveien 4 - 50/2 - oppføring av enkel garasje",
+        "dokumenter": []
+    }
+    e1 = ByggesakEvaluator.evaluate_case(s1)
+    assert e1.statutory_deadline_weeks == 3
+    assert e1.statutory_deadline_days == 21
+    assert e1.deadline_date is not None
+    assert "3-ukers frist" in e1.legal_basis
+
+    # 2. Sak med dispensasjon fra strandsonen (12 ukers frist)
+    s2 = {
+        "dato": "01.07.2026",
+        "tittel": "Strandkanten 1 - 200/5 - søknad om dispensasjon for nybygg i 100-metersbeltet",
+        "dokumenter": []
+    }
+    e2 = ByggesakEvaluator.evaluate_case(s2)
+    assert e2.statutory_deadline_weeks == 12
+    assert e2.statutory_deadline_days == 84
+    assert "12-ukers frist" in e2.legal_basis

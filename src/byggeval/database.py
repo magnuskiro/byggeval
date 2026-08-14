@@ -46,6 +46,10 @@ class Database:
                     primary_company TEXT,
                     companies_text TEXT,
                     
+                    -- Saksbehandlingsfrister
+                    days_remaining INTEGER,
+                    deadline_status TEXT,
+                    
                     -- Ekstraherte adressefelt
                     street_name TEXT,
                     house_number TEXT,
@@ -84,6 +88,14 @@ class Database:
                 cursor.execute("ALTER TABLE cases ADD COLUMN companies_text TEXT")
             except sqlite3.OperationalError:
                 pass
+            try:
+                cursor.execute("ALTER TABLE cases ADD COLUMN days_remaining INTEGER")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                cursor.execute("ALTER TABLE cases ADD COLUMN deadline_status TEXT")
+            except sqlite3.OperationalError:
+                pass
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS sync_history (
@@ -101,6 +113,7 @@ class Database:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_risk_level ON cases(risk_level)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_saksnummer ON cases(saksnummer)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_company ON cases(primary_company)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_days_remaining ON cases(days_remaining)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_gnr_bnr ON cases(gnr, bnr)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_stage ON cases(stage)")
             conn.commit()
@@ -126,6 +139,8 @@ class Database:
         risk_level = eval_res.risk_level if eval_res else "Lav"
         risk_score = eval_res.risk_score if eval_res else 15
         stage = eval_res.stage if eval_res else "Under saksbehandling"
+        days_remaining = eval_res.days_remaining if eval_res else None
+        deadline_status = eval_res.deadline_status if eval_res else "God tid"
 
         companies_str = " | ".join(case.companies) if case.companies else ""
 
@@ -135,12 +150,12 @@ class Database:
                 INSERT INTO cases (
                     identifikator, saksnummer, tittel, undertittel, sakstype, saks_beskrivelse,
                     dato, saksbehandler, status_tittel, er_ferdig, innsyn_url,
-                    primary_company, companies_text,
+                    primary_company, companies_text, days_remaining, deadline_status,
                     street_name, house_number, gnr, bnr, matrikkel, latitude, longitude,
                     category, subcategory, complexity, complexity_score, risk_level, risk_score, stage,
                     address_json, evaluation_json, dokumenter_json, raw_json,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(identifikator) DO UPDATE SET
                     saksnummer=excluded.saksnummer,
                     tittel=excluded.tittel,
@@ -154,6 +169,8 @@ class Database:
                     innsyn_url=excluded.innsyn_url,
                     primary_company=excluded.primary_company,
                     companies_text=excluded.companies_text,
+                    days_remaining=excluded.days_remaining,
+                    deadline_status=excluded.deadline_status,
                     street_name=excluded.street_name,
                     house_number=excluded.house_number,
                     gnr=excluded.gnr,
@@ -186,6 +203,8 @@ class Database:
                 case.innsyn_url,
                 case.primary_company,
                 companies_str,
+                days_remaining,
+                deadline_status,
                 case.address_info.street_name,
                 case.address_info.house_number,
                 case.address_info.gnr,
@@ -242,6 +261,7 @@ class Database:
         risk_level: Optional[str] = None,
         stage: Optional[str] = None,
         company: Optional[str] = None,
+        deadline_status: Optional[str] = None,
         sort_by: str = "dato_desc",
         limit: int = 50,
         offset: int = 0
@@ -272,6 +292,10 @@ class Database:
             where_clauses.append("(primary_company LIKE ? OR companies_text LIKE ?)")
             params.extend([comp_param, comp_param])
 
+        if deadline_status and deadline_status != "all":
+            where_clauses.append("deadline_status = ?")
+            params.append(deadline_status)
+
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
         # Sorteringslogikk
@@ -280,6 +304,8 @@ class Database:
             order_sql = "ORDER BY substr(dato, 7, 4) || substr(dato, 4, 2) || substr(dato, 1, 2) DESC, rowid DESC"
         elif sort_by == "dato_asc":
             order_sql = "ORDER BY substr(dato, 7, 4) || substr(dato, 4, 2) || substr(dato, 1, 2) ASC"
+        elif sort_by == "deadline_asc":
+            order_sql = "ORDER BY CASE WHEN days_remaining IS NULL THEN 999999 ELSE days_remaining END ASC"
         elif sort_by == "risk_desc":
             order_sql = "ORDER BY risk_score DESC"
         elif sort_by == "complexity_desc":
@@ -326,7 +352,8 @@ class Database:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT identifikator, saksnummer, tittel, dato, street_name, house_number, matrikkel,
-                       primary_company, latitude, longitude, category, subcategory, risk_level, risk_score, stage
+                       primary_company, latitude, longitude, category, subcategory, risk_level, risk_score, stage,
+                       days_remaining, deadline_status
                 FROM cases
                 WHERE latitude IS NOT NULL AND longitude IS NOT NULL
                 ORDER BY substr(dato, 7, 4) || substr(dato, 4, 2) || substr(dato, 1, 2) DESC
@@ -349,6 +376,23 @@ class Database:
 
             cursor.execute("SELECT COUNT(*) FROM cases WHERE risk_level IN ('Høy', 'Kritisk')")
             high_risk_cases = cursor.fetchone()[0]
+
+            # Friststatus
+            cursor.execute("SELECT COUNT(*) FROM cases WHERE deadline_status = 'Fristoverskridelse'")
+            overdue_cases = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM cases WHERE deadline_status = 'Nærmer seg frist'")
+            urgent_cases = cursor.fetchone()[0]
+
+            # Fristfordeling
+            cursor.execute("""
+                SELECT deadline_status, COUNT(*) as count
+                FROM cases
+                WHERE deadline_status IS NOT NULL
+                GROUP BY deadline_status
+                ORDER BY count DESC
+            """)
+            deadline_breakdown = [dict(row) for row in cursor.fetchall()]
 
             # Kategorifordeling
             cursor.execute("""
@@ -398,6 +442,9 @@ class Database:
                 "active_cases": total_cases - completed_cases,
                 "completed_cases": completed_cases,
                 "high_risk_cases": high_risk_cases,
+                "overdue_cases": overdue_cases,
+                "urgent_cases": urgent_cases,
+                "deadline_breakdown": deadline_breakdown,
                 "category_breakdown": category_breakdown,
                 "risk_breakdown": risk_breakdown,
                 "stage_breakdown": stage_breakdown,

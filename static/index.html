@@ -96,6 +96,16 @@
                 </div>
 
                 <div class="metric-card">
+                    <div class="metric-icon icon-red">
+                        <i class="ri-alarm-warning-line"></i>
+                    </div>
+                    <div class="metric-data">
+                        <span class="metric-value" id="kpiOverdue">0</span>
+                        <span class="metric-label">Fristoverskridelse</span>
+                    </div>
+                </div>
+
+                <div class="metric-card">
                     <div class="metric-icon icon-green">
                         <i class="ri-checkbox-circle-line"></i>
                     </div>
@@ -175,6 +185,17 @@
                     </div>
 
                     <div class="filter-group">
+                        <label for="deadlineFilter"><i class="ri-timer-line"></i> Lovpålagt Frist</label>
+                        <select id="deadlineFilter" class="custom-select">
+                            <option value="all">Alle friststatuser</option>
+                            <option value="Fristoverskridelse">⚠️ Fristoverskridelse (Kritisk)</option>
+                            <option value="Nærmer seg frist">⏳ Nærmer seg frist (&lt; 14 dager)</option>
+                            <option value="God tid">🟢 God tid (&gt; 14 dager)</option>
+                            <option value="Vedtatt / Avsluttet">✅ Vedtatt / Fullført</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
                         <label for="riskFilter"><i class="ri-shield-line"></i> Risiko</label>
                         <select id="riskFilter" class="custom-select">
                             <option value="all">Alle risikonivåer</option>
@@ -190,6 +211,7 @@
                         <select id="sortFilter" class="custom-select">
                             <option value="dato_desc">Dato (nyest først)</option>
                             <option value="dato_asc">Dato (eldst først)</option>
+                            <option value="deadline_asc">Frist (kortest tid / haster først)</option>
                             <option value="company_asc">Firma (A-Å)</option>
                             <option value="risk_desc">Høyest risikoscore</option>
                             <option value="complexity_desc">Høyest kompleksitet</option>
@@ -220,13 +242,13 @@
                         <tr>
                             <th>Saksnr</th>
                             <th>Status & Stadium</th>
+                            <th>Lovpålagt Frist & Resttid</th>
                             <th>Dato</th>
                             <th>Adresse / Matrikkel</th>
                             <th>Utførende / Firma</th>
                             <th>Tiltak / Tittel</th>
                             <th>Kategori</th>
                             <th>Risiko</th>
-                            <th>Dok.</th>
                             <th>Handling</th>
                         </tr>
                     </thead>

@@ -54,6 +54,14 @@ class EvaluationResult(BaseModel):
     summary: str = ""
     recommendation: Optional[str] = None
     days_in_process: Optional[int] = None
+    
+    # Lovpålagt saksbehandlingsfrist og gjenværende tid (pbl § 21-7 / SAK10)
+    statutory_deadline_weeks: int = 12  # 3 eller 12 uker (SAK10 § 7-1 / § 7-2)
+    statutory_deadline_days: int = 84
+    deadline_date: Optional[str] = None  # f.eks. "02.11.2026"
+    days_remaining: Optional[int] = None  # f.eks. 14 (positiv) eller -5 (overskredet)
+    deadline_status: str = "God tid"  # "God tid", "Nærmer seg frist", "Fristoverskridelse", "Vedtatt / Avsluttet"
+    legal_basis: Optional[str] = None  # f.eks. "Plan- og bygningsloven § 21-7 (12-ukers frist)"
 
 
 class Byggesak(BaseModel):

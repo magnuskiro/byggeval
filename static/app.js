@@ -16,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedCategory: "all",
         selectedCompany: "all",
         selectedStage: "all",
+        selectedDeadline: "all",
         selectedRisk: "all",
         selectedSort: "dato_desc",
         viewMode: "cards", // 'cards' | 'table'
@@ -32,6 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
         kpiTotal: document.getElementById("kpiTotal"),
         kpiActive: document.getElementById("kpiActive"),
         kpiHighRisk: document.getElementById("kpiHighRisk"),
+        kpiOverdue: document.getElementById("kpiOverdue"),
         kpiCompleted: document.getElementById("kpiCompleted"),
         lastSyncInfo: document.getElementById("lastSyncInfo"),
 
@@ -41,6 +43,7 @@ document.addEventListener("DOMContentLoaded", () => {
         categoryFilter: document.getElementById("categoryFilter"),
         companyFilter: document.getElementById("companyFilter"),
         stageFilter: document.getElementById("stageFilter"),
+        deadlineFilter: document.getElementById("deadlineFilter"),
         riskFilter: document.getElementById("riskFilter"),
         sortFilter: document.getElementById("sortFilter"),
 
@@ -93,10 +96,13 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await res.json();
 
             // Update KPIs
-            elements.kpiTotal.textContent = data.total_cases.toLocaleString("no-NO");
-            elements.kpiActive.textContent = data.active_cases.toLocaleString("no-NO");
-            elements.kpiHighRisk.textContent = data.high_risk_cases.toLocaleString("no-NO");
-            elements.kpiCompleted.textContent = data.completed_cases.toLocaleString("no-NO");
+            elements.kpiTotal.textContent = (data.total_cases || 0).toLocaleString("no-NO");
+            elements.kpiActive.textContent = (data.active_cases || 0).toLocaleString("no-NO");
+            elements.kpiHighRisk.textContent = (data.high_risk_cases || 0).toLocaleString("no-NO");
+            if (elements.kpiOverdue) {
+                elements.kpiOverdue.textContent = (data.overdue_cases || 0).toLocaleString("no-NO");
+            }
+            elements.kpiCompleted.textContent = (data.completed_cases || 0).toLocaleString("no-NO");
 
             // Last sync text
             if (data.last_sync) {
@@ -149,6 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (state.selectedCategory !== "all") params.append("category", state.selectedCategory);
             if (state.selectedCompany !== "all") params.append("company", state.selectedCompany);
             if (state.selectedStage !== "all") params.append("stage", state.selectedStage);
+            if (state.selectedDeadline !== "all") params.append("deadline_status", state.selectedDeadline);
             if (state.selectedRisk !== "all") params.append("risk_level", state.selectedRisk);
 
             const res = await fetch(`/api/cases?${params.toString()}`);
@@ -181,7 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // =========================================================================
-    // Stage & Status Helpers
+    // Stage & Deadline Helpers
     // =========================================================================
 
     function getStageInfo(stageRaw) {
@@ -262,6 +269,26 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
+    function getDeadlineBadge(ev) {
+        if (!ev) return '';
+        const status = ev.deadline_status || 'God tid';
+        const days = ev.days_remaining;
+        const weeks = ev.statutory_deadline_weeks || 12;
+        const basis = ev.legal_basis || 'pbl § 21-7';
+
+        if (status === 'Vedtatt / Avsluttet') {
+            return `<span class="badge badge-deadline-completed" title="${escapeHtml(basis)}"><i class="ri-check-line"></i> Fullført (${ev.days_in_process || 0}d)</span>`;
+        }
+        if (status === 'Fristoverskridelse') {
+            const overdueDays = Math.abs(days || 0);
+            return `<span class="badge badge-deadline-overdue" title="${escapeHtml(basis)} - Fristoverskridelse etter ${weeks} uker"><i class="ri-alarm-warning-fill"></i> Overskredet (-${overdueDays}d)</span>`;
+        }
+        if (status === 'Nærmer seg frist') {
+            return `<span class="badge badge-deadline-urgent" title="${escapeHtml(basis)} - Lovpålagt frist: ${ev.deadline_date || ''}"><i class="ri-timer-fill"></i> ${days} dager gjenstår</span>`;
+        }
+        return `<span class="badge badge-deadline-ok" title="${escapeHtml(basis)} - Lovpålagt frist: ${ev.deadline_date || ''}"><i class="ri-time-line"></i> ${days || 0} dager igjen (${weeks}u)</span>`;
+    }
+
     // =========================================================================
     // Rendering Logic
     // =========================================================================
@@ -274,7 +301,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border);">
                     <i class="ri-search-eye-line" style="font-size: 48px; color: var(--text-subtle); display: block; margin-bottom: 12px;"></i>
                     <h3 style="font-size: 18px; font-weight: 700; color: var(--primary); margin-bottom: 6px;">Ingen saker funnet</h3>
-                    <p style="font-size: 14px; color: var(--text-muted); max-width: 400px; margin: 0 auto;">Prøv å justere søkeordet ditt, status eller nullstill filtervalgene.</p>
+                    <p style="font-size: 14px; color: var(--text-muted); max-width: 400px; margin: 0 auto;">Prøv å justere søkeordet ditt, friststatus eller nullstill filtervalgene.</p>
                 </div>
             `;
             elements.casesContainer.innerHTML = emptyHtml;
@@ -302,6 +329,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const addr = c.address_info || {};
         const riskClass = getRiskBadgeClass(ev.risk_level);
         const stageInfo = getStageInfo(ev.stage);
+        const deadlineBadgeHtml = getDeadlineBadge(ev);
         const street = addr.street_name ? `${addr.street_name} ${addr.house_number || ''}${addr.house_letter || ''}`.trim() : 'Tønsberg';
 
         return `
@@ -333,6 +361,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                     <div class="badges-row">
                         <span class="badge ${riskClass}"><i class="ri-shield-line"></i> ${ev.risk_level || 'Ukjent'} risiko</span>
+                        ${deadlineBadgeHtml}
                         <span class="badge badge-category">${ev.category || 'Byggesak'}</span>
                         ${c.primary_company ? `<span class="badge badge-company" title="Utførende / Firma"><i class="ri-briefcase-line"></i> ${escapeHtml(c.primary_company)}</span>` : ''}
                     </div>
@@ -351,6 +380,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const addr = c.address_info || {};
         const riskClass = getRiskBadgeClass(ev.risk_level);
         const stageInfo = getStageInfo(ev.stage);
+        const deadlineBadgeHtml = getDeadlineBadge(ev);
         const street = addr.street_name ? `${addr.street_name} ${addr.house_number || ''}`.trim() : '–';
 
         return `
@@ -363,13 +393,13 @@ document.addEventListener("DOMContentLoaded", () => {
                         ${escapeHtml(stageInfo.label)}
                     </span>
                 </td>
+                <td>${deadlineBadgeHtml}</td>
                 <td>${c.dato}</td>
                 <td>${escapeHtml(street)} ${addr.matrikkel ? `(Gnr ${addr.matrikkel})` : ''}</td>
                 <td>${c.primary_company ? `<span class="badge badge-company"><i class="ri-briefcase-line"></i> ${escapeHtml(c.primary_company)}</span>` : '<span style="color: var(--text-subtle);">–</span>'}</td>
                 <td style="max-width: 240px; font-weight: 600;">${escapeHtml(c.tittel)}</td>
                 <td><span class="badge badge-category">${ev.category || 'Byggesak'}</span></td>
                 <td><span class="badge ${riskClass}">${ev.risk_level || 'Lav'}</span></td>
-                <td>${c.dokumenter ? c.dokumenter.length : 0}</td>
                 <td>
                     <button class="btn btn-secondary btn-sm btn-table-detail" data-id="${c.identifikator}">
                         Åpne
@@ -427,6 +457,25 @@ document.addEventListener("DOMContentLoaded", () => {
         const step3Class = stageInfo.stepIndex >= 3 ? (stageInfo.stepIndex === 3 ? 'active' : 'completed') : '';
         const step4Class = stageInfo.stepIndex >= 4 ? (stageInfo.stepIndex === 4 ? 'active' : 'completed') : '';
 
+        // Deadline calculations for drawer
+        const daysInProc = ev.days_in_process || 0;
+        const totalDeadlineDays = ev.statutory_deadline_days || 84;
+        const progressPct = Math.min(100, Math.round((daysInProc / totalDeadlineDays) * 100));
+        const daysRem = ev.days_remaining;
+        
+        let deadlineColor = '#10b981';
+        let deadlineText = `${daysRem} dager gjenstår`;
+        if (ev.deadline_status === 'Fristoverskridelse') {
+            deadlineColor = '#ef4444';
+            deadlineText = `Frist overskredet med ${Math.abs(daysRem || 0)} dager`;
+        } else if (ev.deadline_status === 'Nærmer seg frist') {
+            deadlineColor = '#f59e0b';
+            deadlineText = `Snarlig frist (${daysRem} dager igjen)`;
+        } else if (ev.deadline_status === 'Vedtatt / Avsluttet') {
+            deadlineColor = '#3b82f6';
+            deadlineText = `Behandlet på ${daysInProc} dager`;
+        }
+
         elements.drawerContent.innerHTML = `
             <div class="drawer-header">
                 <div class="drawer-meta-bar">
@@ -460,6 +509,46 @@ document.addEventListener("DOMContentLoaded", () => {
                     <i class="ri-external-link-line"></i>
                     <span>Åpne sak i Tønsberg kommunes postliste</span>
                 </a>
+            </div>
+
+            <!-- Lovpålagt Saksbehandlingsfrist & Gjenværende Tid -->
+            <div class="drawer-deadline-box">
+                <div class="deadline-header-row">
+                    <strong style="font-size: 14px; color: var(--primary); display: flex; align-items: center; gap: 6px;">
+                        <i class="ri-timer-line" style="color: ${deadlineColor}; font-size: 18px;"></i>
+                        <span>Lovpålagt Saksbehandlingsfrist</span>
+                    </strong>
+                    ${getDeadlineBadge(ev)}
+                </div>
+
+                <div class="deadline-stats-grid">
+                    <div class="deadline-stat-card">
+                        <span class="deadline-stat-value">${ev.statutory_deadline_weeks || 12} uker</span>
+                        <span class="deadline-stat-label">Lovpålagt frist</span>
+                    </div>
+                    <div class="deadline-stat-card">
+                        <span class="deadline-stat-value">${ev.deadline_date || '–'}</span>
+                        <span class="deadline-stat-label">Fristdato</span>
+                    </div>
+                    <div class="deadline-stat-card">
+                        <span class="deadline-stat-value" style="color: ${deadlineColor};">${daysRem !== null ? (daysRem >= 0 ? daysRem + ' dager' : '-' + Math.abs(daysRem) + ' dager') : '–'}</span>
+                        <span class="deadline-stat-label">Resttid / Avvik</span>
+                    </div>
+                    <div class="deadline-stat-card">
+                        <span class="deadline-stat-value">${daysInProc} dager</span>
+                        <span class="deadline-stat-label">Brukt tid</span>
+                    </div>
+                </div>
+
+                <!-- Fremdriftslinje for frist -->
+                <div class="deadline-progress-container">
+                    <div class="deadline-progress-bar" style="width: ${progressPct}%; background-color: ${deadlineColor};"></div>
+                </div>
+
+                <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
+                    <i class="ri-scales-3-line" style="margin-right: 4px; color: var(--accent);"></i>
+                    <strong>Hjemmel:</strong> ${escapeHtml(ev.legal_basis || 'Plan- og bygningsloven § 21-7')}
+                </div>
             </div>
 
             <!-- Tydelig Saksstatus & Fremdriftsboks -->
@@ -514,7 +603,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <span class="eval-stat-label">Kompleksitet (${ev.complexity})</span>
                     </div>
                     <div class="eval-stat-box">
-                        <span class="eval-stat-num">${ev.days_in_process !== null ? ev.days_in_process + ' dager' : '–'}</span>
+                        <span class="eval-stat-num">${daysInProc} dager</span>
                         <span class="eval-stat-label">Behandlingstid</span>
                     </div>
                 </div>
@@ -874,6 +963,14 @@ document.addEventListener("DOMContentLoaded", () => {
         state.currentPage = 1;
         fetchCases();
     });
+
+    if (elements.deadlineFilter) {
+        elements.deadlineFilter.addEventListener("change", (e) => {
+            state.selectedDeadline = e.target.value;
+            state.currentPage = 1;
+            fetchCases();
+        });
+    }
 
     elements.riskFilter.addEventListener("change", (e) => {
         state.selectedRisk = e.target.value;

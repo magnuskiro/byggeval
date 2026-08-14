@@ -75,6 +75,13 @@ def test_api_cases_company_search(client):
     assert "cases" in data
 
 
+def test_api_cases_deadline_filter(client):
+    response = client.get("/api/cases?deadline_status=God%20tid")
+    assert response.status_code == 200
+    data = response.json()
+    assert "cases" in data
+
+
 def test_serve_static_index(client):
     response = client.get("/")
     assert response.status_code == 200
