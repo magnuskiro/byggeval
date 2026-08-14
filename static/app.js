@@ -531,6 +531,47 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    function getOfficialDecisionDrawerCard(c) {
+        let decisionBoxClass = 'decision-pending';
+        let decisionIcon = 'ri-time-line';
+        if (c.has_official_decision) {
+            const dtype = c.official_decision_type || '';
+            if (dtype.includes('Avslått') || dtype.includes('Avslag')) {
+                decisionBoxClass = 'decision-rejected';
+                decisionIcon = 'ri-close-circle-fill';
+            } else {
+                decisionBoxClass = 'decision-permit';
+                decisionIcon = 'ri-checkbox-circle-fill';
+            }
+        }
+
+        return `
+            <div class="official-decision-box ${decisionBoxClass}">
+                <div class="official-decision-header">
+                    <span class="official-badge-tag"><i class="ri-government-line"></i> Kommunens offisielle status</span>
+                    <span style="font-size: 12px; font-weight: 600; color: #475569;">Offisiell status: ${escapeHtml(c.official_status || 'Under behandling')}</span>
+                </div>
+
+                <div class="official-decision-title">
+                    <i class="${decisionIcon}"></i>
+                    <span>${c.has_official_decision ? escapeHtml(c.official_decision_type) : 'Ingen formelt vedtak fattet ennå (Under saksbehandling)'}</span>
+                </div>
+
+                ${c.has_official_decision && c.decision_document_title ? `
+                    <div class="official-doc-item">
+                        <div><strong><i class="ri-file-shield-2-line"></i> Journalført vedtaksdokument fra kommunen:</strong></div>
+                        <div style="font-weight: 600; margin: 2px 0;">${escapeHtml(c.decision_document_title)}</div>
+                        ${c.decision_date ? `<div style="color: var(--text-muted); font-size: 11px;">Dato for vedtak: ${c.decision_date}</div>` : ''}
+                    </div>
+                ` : `
+                    <p style="font-size: 12px; color: var(--text-muted); margin: 6px 0 0 0;">
+                        Kommunen har foreløpig ikke fattet eller journalført et formelt enkeltvedtak (rammetillatelse, ett-trinnstillatelse eller ferdigattest) i saken.
+                    </p>
+                `}
+            </div>
+        `;
+    }
+
     function renderDrawerContent(c) {
         const ev = c.evaluation || {};
         const addr = c.address_info || {};
