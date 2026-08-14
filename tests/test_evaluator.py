@@ -285,3 +285,46 @@ def test_is_relevant_building_case():
         ]
     }
     assert ByggesakEvaluator.is_relevant_building_case(reell_sak) is True
+
+
+def test_dispensation_demand_resets_complete_date_and_deadline():
+    """Tester at kommunalt dispensasjonskrav (f.eks. vegloven § 29) nullstiller frist og setter 12-ukers frist fra komplett dispensasjon."""
+    raw_sak = {
+        "identifikator": "test-veglov-1",
+        "saksnummer": "2026/7367",
+        "tittel": "Tornveien 6 - 145/80 - garasje",
+        "dato": "31.03.2026",
+        "dokumenter": [
+            {
+                "identifikator": "d1",
+                "tittel": "Tornveien 6 - 145/80 - garasje - søknad om tillatelse i ett trinn",
+                "fra": ["BYGGMESTER DE LANGE OG SØRENSEN AS"],
+                "dato": "31.03.2026"
+            },
+            {
+                "identifikator": "d2",
+                "tittel": "Tornveien 6 - 145/80 - søknad om oppføring garasje - etterlyser tilleggsdokumentasjon",
+                "fra": [],
+                "dato": "23.07.2026"
+            },
+            {
+                "identifikator": "d3",
+                "tittel": "Tornveien 6 - 145/80 - garasje - dispensasjon fra avstandsbestemmelsen i Vegloven - anmodning om snarlig behandling",
+                "fra": [],
+                "dato": "23.07.2026"
+            },
+            {
+                "identifikator": "d4",
+                "tittel": "Tornveien 6 - 145/80 - garasje - situasjonsplan",
+                "fra": ["Mesterhus Tønsberg As"],
+                "dato": "04.08.2026"
+            }
+        ]
+    }
+    case = ByggesakEvaluator.create_byggesak_model(raw_sak)
+    assert case.complete_application_date == "04.08.2026"
+    assert case.evaluation.statutory_deadline_weeks == 12
+    assert case.evaluation.deadline_date == "27.10.2026"
+    assert case.evaluation.days_remaining > 0
+    assert "SAK10 § 7-4" in case.evaluation.legal_basis
+

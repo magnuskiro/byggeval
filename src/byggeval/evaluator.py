@@ -300,7 +300,7 @@ class ByggesakEvaluator:
             days = 84
             legal_basis = "Plan- og bygningsloven § 21-7 4. ledd (12-ukers frist: krever dispensasjonsvedtak etter pbl kap 19)"
 
-        # 1. Finn dato for søknad og eventuell siste tilleggsdokumentasjon / mangelbrev
+        # 1. Undersøk dokumenter for mangelbrev, dispensasjonskrav og innsendt supplering
         initial_date_str = sak_data.get("dato")
         initial_dt = None
         if initial_date_str:
@@ -314,10 +314,24 @@ class ByggesakEvaluator:
         latest_supplement_str = None
         latest_mangelbrev_dt = None
         latest_mangelbrev_str = None
+        has_dispensation_demand = False
+
+        mangel_keywords = [
+            "mangelbrev", "etterlyser", "etterlysning", "etterspør", "ber om tilleggs", 
+            "tilleggsdokumentasjon", "mangler ved søknad", "avvist", "varsel om avslag",
+            "krever dispensasjon", "avstandsbestemmelsen i vegloven"
+        ]
+
+        supplement_keywords = [
+            "ettersending", "supplering", "tilleggsopplysning", "revidert", "svar på mangel", 
+            "supplerende", "situasjonsplan", "dispensasjon fra", "søknad om dispensasjon",
+            "redegjørelse", "nabovarsel", "kvittering", "fullmakt", "fasadetegning", "snittegning"
+        ]
 
         for d in docs:
             dtit = d.get("tittel", "").lower() if isinstance(d, dict) else (d.tittel.lower() if hasattr(d, "tittel") else "")
             ddato = d.get("dato") if isinstance(d, dict) else (d.dato if hasattr(d, "dato") else None)
+            dfra = d.get("fra", []) if isinstance(d, dict) else (d.fra if hasattr(d, "fra") else [])
             if not ddato:
                 continue
 
@@ -327,34 +341,51 @@ class ByggesakEvaluator:
             except Exception:
                 continue
 
-            # Sjekk etterspørsel om mangler fra kommunen (mangelbrev / ber om tilleggsinfo)
-            if any(w in dtit for w in ["mangelbrev", "tilleggsdokumentasjon og varsel", "ber om tilleggs", "mangler ved søknad", "etterlysning"]):
+            is_municipal = (not dfra) or any("kommune" in str(f).lower() for f in dfra)
+            is_applicant = bool(dfra) and not is_municipal
+
+            # Sjekk om det er dispensasjonskrav/mangelbrev fra kommunen
+            if any(w in dtit for w in mangel_keywords) and is_municipal:
                 if not latest_mangelbrev_dt or parsed_d > latest_mangelbrev_dt:
                     latest_mangelbrev_dt = parsed_d
                     latest_mangelbrev_str = ddato
+                if "dispensasjon" in dtit or "vegloven" in dtit:
+                    has_dispensation_demand = True
 
-            # Sjekk innsendt tilleggsdokumentasjon / supplering fra søker
-            if any(w in dtit for w in ["ettersending", "supplering", "tilleggsopplysning", "revidert", "svar på mangel", "supplerende"]):
-                if not latest_supplement_dt or parsed_d > latest_supplement_dt:
-                    latest_supplement_dt = parsed_d
-                    latest_supplement_str = ddato
+            # Sjekk innsendt dokumentasjon / svar fra søker etter opprinnelig innsending
+            if not is_municipal or any(w in dtit for w in supplement_keywords):
+                if not any(w in dtit for w in mangel_keywords):
+                    if is_applicant or any(w in dtit for w in supplement_keywords):
+                        if not initial_dt or parsed_d > initial_dt:
+                            if not latest_supplement_dt or parsed_d > latest_supplement_dt:
+                                latest_supplement_dt = parsed_d
+                                latest_supplement_str = ddato
 
-        # Avgjør komplett søknadsdato
+        # Hvis det kreves dispensasjon (pbl kap 19 eller vegloven § 29), oppjusteres frist til 12 uker
+        if has_dispensation_demand or "dispensasjon" in flags or "vernesone" in flags:
+            weeks = 12
+            days = 84
+            if has_dispensation_demand or "vegloven" in str(sak_data):
+                legal_basis = "Plan- og bygningsloven § 21-7 4. ledd jf. SAK10 § 7-4 3. ledd (12-ukers frist løper fra komplett dispensasjonssøknad/situasjonsplan mottatt)"
+            else:
+                legal_basis = "Plan- og bygningsloven § 21-7 4. ledd / SAK10 § 7-2 (12-ukers frist: krever dispensasjonsvedtak etter pbl kap 19)"
+
+        # 2. Avgjør juridisk komplett søknadsdato (pbl § 21-7 jf. SAK10 § 7-4)
         complete_dt = initial_dt
         complete_date_str = initial_date_str
 
-        # Dersom det er ettersendt tilleggsdokumentasjon etter opprinnelig dato:
+        # Dersom det er ettersendt nødvendig dokumentasjon eller dispensasjonssøknad etter opprinnelig innsending:
         if latest_supplement_dt and (not initial_dt or latest_supplement_dt > initial_dt):
             complete_dt = latest_supplement_dt
             complete_date_str = latest_supplement_str
 
-        # Sjekk om fristen er stanset/fryst pga ubesvart mangelbrev
+        # 3. Sjekk om fristen er stanset/fryst pga ubesvart mangelbrev (SAK10 § 7-4 2. ledd)
         is_deadline_paused = False
         deadline_pause_reason = None
         if latest_mangelbrev_dt:
             if not latest_supplement_dt or latest_mangelbrev_dt > latest_supplement_dt:
                 is_deadline_paused = True
-                deadline_pause_reason = f"Kommunen etterspurte tilleggsdokumentasjon {latest_mangelbrev_str}. Fristen er fryst i påvente av svar."
+                deadline_pause_reason = f"Kommunen etterspurte tilleggsdokumentasjon/dispensasjon {latest_mangelbrev_str}. Fristen er stanset i påvente av svar."
 
         deadline_date = None
         days_remaining = None
