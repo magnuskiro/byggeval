@@ -5,7 +5,7 @@ SQLite database- og lagringslag for Byggeval.
 import json
 import sqlite3
 import os
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Set
 from datetime import datetime
 from .models import Byggesak, AddressInfo, EvaluationResult, Dokument
 from .geocoder import geocode_address
@@ -204,6 +204,14 @@ class Database:
             if not row:
                 return None
             return self._row_to_case(row)
+
+    def get_all_case_ids(self) -> Set[str]:
+        """Henter et sett over alle lagrede saks-identifikatorer for å unngå unødige API-kall."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT identifikator FROM cases")
+            rows = cursor.fetchall()
+            return {row[0] for row in rows}
 
     def get_cases(
         self,

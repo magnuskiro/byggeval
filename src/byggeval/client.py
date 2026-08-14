@@ -2,16 +2,20 @@
 API-klient for innhenting av postlister og innsyn fra Tønsberg kommune.
 """
 
+import time
 import logging
 import requests
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 
 class TonsbergInnsynClient:
-    """Klient mot Tønsberg kommunes offisielle innsyn- og postliste-API."""
+    """
+    Klient mot Tønsberg kommunes offisielle innsyn- og postliste-API.
+    Inkluderer innebygd rate-limiting og skånsom pacing for å beskytte kommunens servere.
+    """
 
     BASE_URL = "https://www.tonsberg.kommune.no/api/presentation/v2/nye-innsyn"
     
@@ -31,10 +35,22 @@ class TonsbergInnsynClient:
         "X-ANTI-CSRF": "1"
     }
 
-    def __init__(self, timeout: int = 15):
+    def __init__(self, timeout: int = 15, delay_between_requests: float = 0.5, max_retries: int = 3):
         self.timeout = timeout
+        self.delay_between_requests = delay_between_requests
+        self.max_retries = max_retries
         self.session = requests.Session()
         self.session.headers.update(self.DEFAULT_HEADERS)
+        self._last_request_time = 0.0
+
+    def _wait_for_rate_limit(self):
+        """Sørger for en høflig forsinkelse mellom hvert kall til kommunen."""
+        now = time.time()
+        elapsed = now - self._last_request_time
+        if elapsed < self.delay_between_requests:
+            sleep_needed = self.delay_between_requests - elapsed
+            time.sleep(sleep_needed)
+        self._last_request_time = time.time()
 
     def fetch_overview(
         self,
@@ -45,7 +61,7 @@ class TonsbergInnsynClient:
         sort_order: str = "DatoNyest"
     ) -> Dict[str, Any]:
         """
-        Henter overordnet søkeresultat/postliste fra Tønsberg kommune.
+        Henter overordnet søkeresultat/postliste fra Tønsberg kommune med rate limiting.
         """
         url = f"{self.BASE_URL}/overview"
         
@@ -66,29 +82,50 @@ class TonsbergInnsynClient:
             "keyValues": key_values
         }
 
-        try:
-            response = self.session.post(url, json=payload, timeout=self.timeout)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("content", {})
-        except requests.RequestException as e:
-            logger.error(f"Feil ved henting av oversikt fra Tønsberg API: {e}")
-            raise
+        for attempt in range(1, self.max_retries + 1):
+            self._wait_for_rate_limit()
+            try:
+                response = self.session.post(url, json=payload, timeout=self.timeout)
+                if response.status_code == 429:
+                    wait_time = attempt * 2.0
+                    logger.warning(f"Rate limit (429) fra Tønsberg API. Venter {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                return data.get("content", {})
+            except requests.RequestException as e:
+                logger.warning(f"Feil ved henting av oversikt (forsøk {attempt}/{self.max_retries}): {e}")
+                if attempt == self.max_retries:
+                    raise
+                time.sleep(attempt * 1.5)
+
+        return {}
 
     def fetch_case_details(self, case_identifier: str) -> Optional[Dict[str, Any]]:
         """
-        Henter fullstendige detaljer og journalposter/dokumenter for en sak.
+        Henter fullstendige detaljer og journalposter/dokumenter for en sak med rate limiting.
         """
         url = f"{self.BASE_URL}/details/{case_identifier}"
-        try:
-            response = self.session.get(url, timeout=self.timeout)
-            response.raise_for_status()
-            data = response.json()
-            content = data.get("content", {})
-            return content.get("sak") if content else None
-        except requests.RequestException as e:
-            logger.error(f"Feil ved henting av saksdetaljer for {case_identifier}: {e}")
-            return None
+        for attempt in range(1, self.max_retries + 1):
+            self._wait_for_rate_limit()
+            try:
+                response = self.session.get(url, timeout=self.timeout)
+                if response.status_code == 429:
+                    wait_time = attempt * 2.0
+                    logger.warning(f"Rate limit (429) fra Tønsberg API for {case_identifier}. Venter {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                content = data.get("content", {})
+                return content.get("sak") if content else None
+            except requests.RequestException as e:
+                logger.warning(f"Feil ved henting av saksdetaljer for {case_identifier} (forsøk {attempt}/{self.max_retries}): {e}")
+                if attempt == self.max_retries:
+                    return None
+                time.sleep(attempt * 1.0)
+        return None
 
     def fetch_cases_batch(
         self,
@@ -96,16 +133,22 @@ class TonsbergInnsynClient:
         page_size: int = 20,
         sakstype: Optional[str] = SAKSTYPE_BYGGESAK,
         search_term: Optional[str] = None,
-        fetch_details: bool = True
+        fetch_details: bool = True,
+        skip_existing_ids: Optional[Set[str]] = None,
+        progress_callback: Optional[callable] = None
     ) -> List[Dict[str, Any]]:
         """
-        Henter en batch med saker, inkludert fullstendige detaljer om ønskelig.
+        Henter en skånsom batch med saker, med støtte for å hoppe over allerede kjente saker.
         """
         cases: List[Dict[str, Any]] = []
         seen_case_ids = set()
+        existing_ids = skip_existing_ids or set()
 
         for page in range(1, max_pages + 1):
             try:
+                if progress_callback:
+                    progress_callback(f"Henter side {page} av {max_pages}...")
+
                 overview = self.fetch_overview(
                     sakstype=sakstype,
                     search_term=search_term,
@@ -118,7 +161,7 @@ class TonsbergInnsynClient:
                 if not items:
                     break
 
-                for item in items:
+                for i, item in enumerate(items):
                     # Finn saks-identifikator (enten parentIdentifier hvis dokument, eller identifier hvis sak)
                     parent_id = item.get("parentIdentifier")
                     item_id = item.get("identifier")
@@ -128,7 +171,14 @@ class TonsbergInnsynClient:
                         continue
                     seen_case_ids.add(case_id)
 
+                    # Hvis saken allerede finnes i lokal database, trenger vi ikke hente detaljer på nytt
+                    if case_id in existing_ids:
+                        continue
+
                     if fetch_details:
+                        if progress_callback:
+                            progress_callback(f"Henter detaljer for sak {len(cases) + 1}...")
+
                         details = self.fetch_case_details(case_id)
                         if details:
                             cases.append(details)

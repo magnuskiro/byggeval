@@ -13,22 +13,35 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("byggeval.fetcher")
 
 
-def run_fetch(pages: int = 3, page_size: int = 20, search_term: str = None, sakstype: str = TonsbergInnsynClient.SAKSTYPE_BYGGESAK, db_path: str = "data/byggeval.db"):
-    """Kjører innhenting og lagring av byggesaker."""
-    logger.info(f"Starter innhenting fra Tønsberg kommune (Sider: {pages}, Pr side: {page_size}, Søk: '{search_term or 'Ingen'}')...")
+def run_fetch(
+    pages: int = 3,
+    page_size: int = 20,
+    search_term: str = None,
+    sakstype: str = TonsbergInnsynClient.SAKSTYPE_BYGGESAK,
+    db_path: str = "data/byggeval.db",
+    delay: float = 0.5,
+    force_refresh: bool = False
+):
+    """Kjører skånsom innhenting og lagring av byggesaker."""
+    logger.info(f"Starter skånsom innhenting fra Tønsberg kommune (Sider: {pages}, Pr side: {page_size}, Forsinkelse: {delay}s, Søk: '{search_term or 'Ingen'}')...")
     
-    client = TonsbergInnsynClient()
+    client = TonsbergInnsynClient(delay_between_requests=delay)
     db = Database(db_path=db_path)
     
+    existing_ids = set() if force_refresh else db.get_all_case_ids()
+    if existing_ids:
+        logger.info(f"Fant {len(existing_ids)} saker allerede i lokal database. Hopper over uendrede detaljkall for å skåne serveren.")
+
     raw_cases = client.fetch_cases_batch(
         max_pages=pages,
         page_size=page_size,
         sakstype=sakstype,
         search_term=search_term,
-        fetch_details=True
+        fetch_details=True,
+        skip_existing_ids=existing_ids
     )
     
-    logger.info(f"Mottok {len(raw_cases)} unike saker fra Tønsberg API. Starter evaluering og lagring...")
+    logger.info(f"Mottok {len(raw_cases)} nye unike saker fra Tønsberg API. Starter evaluering og lagring...")
     
     saved_cases = []
     for raw in raw_cases:
@@ -41,7 +54,7 @@ def run_fetch(pages: int = 3, page_size: int = 20, search_term: str = None, saks
             
     db.record_sync(cases_synced=len(saved_cases), error_count=len(raw_cases) - len(saved_cases), status="success")
     
-    logger.info(f"Fullført! Lagret {len(saved_cases)} byggesaker i databasen.")
+    logger.info(f"Fullført! Lagret {len(saved_cases)} nye byggesaker i databasen.")
     
     # Skriv ut sammendrag
     stats = db.get_statistics()
@@ -66,17 +79,27 @@ def run_fetch(pages: int = 3, page_size: int = 20, search_term: str = None, saks
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Byggeval - Hent byggesaker fra Tønsberg kommune")
+    parser = argparse.ArgumentParser(description="Byggeval - Hent byggesaker fra Tønsberg kommune (skånsom og rate-limited)")
     parser.add_argument("--pages", type=int, default=3, help="Antall sider å hente (default: 3)")
     parser.add_argument("--page-size", type=int, default=20, help="Antall saker per side (default: 20)")
+    parser.add_argument("--delay", type=float, default=0.5, help="Forsinkelse i sekunder mellom forespørsler (default: 0.5s)")
     parser.add_argument("--search", type=str, default=None, help="Søketekst for filtrering")
+    parser.add_argument("--force", action="store_true", help="Hent detaljer på nytt for saker som allerede finnes i databasen")
     parser.add_argument("--all-types", action="store_true", help="Hent alle sakstyper, ikke bare byggesak")
     parser.add_argument("--db", type=str, default="data/byggeval.db", help="Sti til databasefil")
     
     args = parser.parse_args()
     
     sakstype = None if args.all_types else TonsbergInnsynClient.SAKSTYPE_BYGGESAK
-    run_fetch(pages=args.pages, page_size=args.page_size, search_term=args.search, sakstype=sakstype, db_path=args.db)
+    run_fetch(
+        pages=args.pages,
+        page_size=args.page_size,
+        search_term=args.search,
+        sakstype=sakstype,
+        db_path=args.db,
+        delay=args.delay,
+        force_refresh=args.force
+    )
 
 
 if __name__ == "__main__":

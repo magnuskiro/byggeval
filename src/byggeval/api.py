@@ -8,7 +8,7 @@ from fastapi import FastAPI, Query, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .database import Database
 from .client import TonsbergInnsynClient
@@ -31,7 +31,8 @@ app.add_middleware(
 )
 
 db = Database(db_path=os.getenv("BYGGEVAL_DB_PATH", "data/byggeval.db"))
-client = TonsbergInnsynClient()
+# Skånsom klient med 0.6 sekunder forsinkelse mellom hvert kall
+client = TonsbergInnsynClient(delay_between_requests=0.6)
 
 # Sync status tracker
 sync_state = {
@@ -43,28 +44,37 @@ sync_state = {
 
 
 class SyncRequest(BaseModel):
-    pages: int = 3
-    page_size: int = 20
+    pages: int = Field(default=2, ge=1, le=5, description="Maks 5 sider per synkronisering for skånsom drift")
+    page_size: int = Field(default=20, ge=5, le=30)
     search: Optional[str] = None
     sakstype: Optional[str] = TonsbergInnsynClient.SAKSTYPE_BYGGESAK
+    force_refresh: bool = Field(default=False, description="Hent også saker som allerede er lagret")
 
 
-def perform_sync(pages: int, page_size: int, search: Optional[str], sakstype: Optional[str]):
-    """Bakgrunnsprosess for synkronisering."""
+def perform_sync(pages: int, page_size: int, search: Optional[str], sakstype: Optional[str], force_refresh: bool = False):
+    """Bakgrunnsprosess for skånsom synkronisering."""
     global sync_state
     sync_state["is_syncing"] = True
-    sync_state["progress"] = "Henter data fra Tønsberg kommune..."
+    sync_state["progress"] = "Kobler til Tønsberg kommunes innsynsløsning..."
     
     try:
+        # Hent kjente saks-IDer for å unngå å laste ned samme sak mange ganger
+        existing_ids = set() if force_refresh else db.get_all_case_ids()
+
+        def update_progress(msg: str):
+            sync_state["progress"] = msg
+
         raw_cases = client.fetch_cases_batch(
             max_pages=pages,
             page_size=page_size,
             sakstype=sakstype,
             search_term=search,
-            fetch_details=True
+            fetch_details=True,
+            skip_existing_ids=existing_ids,
+            progress_callback=update_progress
         )
         
-        sync_state["progress"] = f"Evaluerer og lagrer {len(raw_cases)} saker..."
+        sync_state["progress"] = f"Evaluerer og lagrer {len(raw_cases)} nye saker..."
         saved = 0
         for raw in raw_cases:
             try:
@@ -75,7 +85,10 @@ def perform_sync(pages: int, page_size: int, search: Optional[str], sakstype: Op
                 pass
                 
         db.record_sync(cases_synced=saved, error_count=len(raw_cases) - saved, status="success")
-        sync_state["last_result"] = f"Synkroniserte {saved} saker."
+        if saved == 0 and len(existing_ids) > 0:
+            sync_state["last_result"] = "Ingen nye saker funnet (databasen er allerede oppdatert)."
+        else:
+            sync_state["last_result"] = f"Synkroniserte {saved} nye saker skånsomt."
     except Exception as e:
         sync_state["last_result"] = f"Feil: {str(e)}"
     finally:

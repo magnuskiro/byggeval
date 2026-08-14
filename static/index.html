@@ -308,9 +308,13 @@
                 <p class="modal-desc">
                     Henter de nyeste byggesakene og tilknyttede journalposter direkte fra Tønsberg kommunes offentlige innsyn-API.
                 </p>
+                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: var(--radius-md); padding: 12px; font-size: 13px; color: #166534; display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px;">
+                    <i class="ri-shield-check-line" style="font-size: 16px; margin-top: 1px;"></i>
+                    <span><strong>Skånsom innhenting:</strong> Systemet benytter rate-limiting med forsinkelse mellom hvert kall og hopper over uendrede saker for å ikke overbelaste kommunens servere.</span>
+                </div>
                 <div class="form-group">
-                    <label for="syncPagesInput">Antall sider å hente (ca. 20 saker per side):</label>
-                    <input type="number" id="syncPagesInput" min="1" max="20" value="3" class="custom-input">
+                    <label for="syncPagesInput">Antall sider å hente (maks 5 sider, ~20 saker per side):</label>
+                    <input type="number" id="syncPagesInput" min="1" max="5" value="2" class="custom-input">
                 </div>
                 <div class="form-group">
                     <label for="syncSearchInput">Valgfritt søkefilter (f.eks. tilbygg, enebolig, revetal):</label>
@@ -323,7 +327,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="btnSyncCancel">Avbryt</button>
-                <button class="btn btn-primary" id="btnStartSync">Start Innhenting</button>
+                <button class="btn btn-primary" id="btnStartSync">Start Skånsom Innhenting</button>
             </div>
         </div>
     </div>
