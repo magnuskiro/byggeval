@@ -160,6 +160,21 @@
                     </div>
 
                     <div class="filter-group">
+                        <label for="stageFilter"><i class="ri-progress-3-line"></i> Saksstatus</label>
+                        <select id="stageFilter" class="custom-select">
+                            <option value="all">Alle saksstatuser</option>
+                            <option value="Under saksbehandling">Under saksbehandling</option>
+                            <option value="Vedtatt / Tillatelse gitt">Vedtatt / Tillatelse gitt</option>
+                            <option value="Igangsettingstillatelse">Igangsettingstillatelse</option>
+                            <option value="Ferdigattest omsøkt/utstedt">Ferdigattest</option>
+                            <option value="Forhåndskonferanse">Forhåndskonferanse</option>
+                            <option value="Avventer tilleggsdokumentasjon">Avventer dokumentasjon</option>
+                            <option value="Ulovlighetsoppfølging pågår">Ulovlighet / Tilsyn</option>
+                            <option value="Ferdigbehandlet">Ferdigbehandlet / Avsluttet</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
                         <label for="riskFilter"><i class="ri-shield-line"></i> Risiko</label>
                         <select id="riskFilter" class="custom-select">
                             <option value="all">Alle risikonivåer</option>
@@ -204,6 +219,7 @@
                     <thead>
                         <tr>
                             <th>Saksnr</th>
+                            <th>Status & Stadium</th>
                             <th>Dato</th>
                             <th>Adresse / Matrikkel</th>
                             <th>Utførende / Firma</th>

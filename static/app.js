@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
         searchQuery: "",
         selectedCategory: "all",
         selectedCompany: "all",
+        selectedStage: "all",
         selectedRisk: "all",
         selectedSort: "dato_desc",
         viewMode: "cards", // 'cards' | 'table'
@@ -39,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btnClearSearch: document.getElementById("btnClearSearch"),
         categoryFilter: document.getElementById("categoryFilter"),
         companyFilter: document.getElementById("companyFilter"),
+        stageFilter: document.getElementById("stageFilter"),
         riskFilter: document.getElementById("riskFilter"),
         sortFilter: document.getElementById("sortFilter"),
 
@@ -146,6 +148,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (state.searchQuery) params.append("search", state.searchQuery);
             if (state.selectedCategory !== "all") params.append("category", state.selectedCategory);
             if (state.selectedCompany !== "all") params.append("company", state.selectedCompany);
+            if (state.selectedStage !== "all") params.append("stage", state.selectedStage);
             if (state.selectedRisk !== "all") params.append("risk_level", state.selectedRisk);
 
             const res = await fetch(`/api/cases?${params.toString()}`);
@@ -178,6 +181,88 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // =========================================================================
+    // Stage & Status Helpers
+    // =========================================================================
+
+    function getStageInfo(stageRaw) {
+        const stage = stageRaw || "Under saksbehandling";
+        const s = stage.toLowerCase();
+
+        if (s.includes("vedtatt") || s.includes("tillatelse gitt") || s.includes("godkjent")) {
+            return {
+                slug: "vedtatt",
+                label: "Vedtatt / Tillatelse gitt",
+                icon: "ri-checkbox-circle-fill",
+                desc: "Søknaden er formelt behandlet og tillatelse er innvilget av Tønsberg kommune.",
+                stepIndex: 3
+            };
+        }
+        if (s.includes("igangsetting")) {
+            return {
+                slug: "igangsetting",
+                label: "Igangsettingstillatelse",
+                icon: "ri-hammer-fill",
+                desc: "Igangsettingstillatelse er gitt. Byggearbeider kan nå igangsettes på eiendommen.",
+                stepIndex: 4
+            };
+        }
+        if (s.includes("ferdigattest")) {
+            return {
+                slug: "ferdigattest",
+                label: "Ferdigattest",
+                icon: "ri-award-fill",
+                desc: "Tiltaket er ferdigstilt og ferdigattest / midlertidig brukstillatelse er registrert.",
+                stepIndex: 4
+            };
+        }
+        if (s.includes("forhåndskonferanse")) {
+            return {
+                slug: "forhandskonferanse",
+                label: "Forhåndskonferanse",
+                icon: "ri-chat-voice-fill",
+                desc: "Saken gjelder forhåndskonferanse for veiledning og planavklaring før formell søknad.",
+                stepIndex: 1
+            };
+        }
+        if (s.includes("avventer") || s.includes("supplering") || s.includes("mangel")) {
+            return {
+                slug: "avventer",
+                label: "Avventer dokumentasjon",
+                icon: "ri-time-fill",
+                desc: "Kommunen har etterspurt tilleggsopplysninger før vedtak kan fattes.",
+                stepIndex: 2
+            };
+        }
+        if (s.includes("ulovlighet") || s.includes("stans")) {
+            return {
+                slug: "ulovlighet",
+                label: "Ulovlighet / Tilsyn",
+                icon: "ri-alert-fill",
+                desc: "Kommunens tilsynsavdeling følger opp ulovlige byggearbeider eller stansingsvarsel.",
+                stepIndex: 2
+            };
+        }
+        if (s.includes("ferdig") || s.includes("avsluttet")) {
+            return {
+                slug: "ferdigbehandlet",
+                label: "Ferdigbehandlet",
+                icon: "ri-archive-fill",
+                desc: "Saken er fullført og arkivert.",
+                stepIndex: 4
+            };
+        }
+
+        // Standard: Under saksbehandling
+        return {
+            slug: "under-behandling",
+            label: "Under saksbehandling",
+            icon: "ri-loader-4-fill",
+            desc: "Saken er registrert og under aktiv saksbehandling hos bygningsmyndighetene.",
+            stepIndex: 2
+        };
+    }
+
+    // =========================================================================
     // Rendering Logic
     // =========================================================================
 
@@ -189,11 +274,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; background: var(--surface); border-radius: var(--radius-lg); border: 1px solid var(--border);">
                     <i class="ri-search-eye-line" style="font-size: 48px; color: var(--text-subtle); display: block; margin-bottom: 12px;"></i>
                     <h3 style="font-size: 18px; font-weight: 700; color: var(--primary); margin-bottom: 6px;">Ingen saker funnet</h3>
-                    <p style="font-size: 14px; color: var(--text-muted); max-width: 400px; margin: 0 auto;">Prøv å justere søkeordet ditt, firmanavn eller nullstill filtervalgene.</p>
+                    <p style="font-size: 14px; color: var(--text-muted); max-width: 400px; margin: 0 auto;">Prøv å justere søkeordet ditt, status eller nullstill filtervalgene.</p>
                 </div>
             `;
             elements.casesContainer.innerHTML = emptyHtml;
-            elements.casesTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 40px;">Ingen saker funnet</td></tr>`;
+            elements.casesTableBody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 40px;">Ingen saker funnet</td></tr>`;
             return;
         }
 
@@ -216,17 +301,29 @@ document.addEventListener("DOMContentLoaded", () => {
         const ev = c.evaluation || {};
         const addr = c.address_info || {};
         const riskClass = getRiskBadgeClass(ev.risk_level);
+        const stageInfo = getStageInfo(ev.stage);
         const street = addr.street_name ? `${addr.street_name} ${addr.house_number || ''}${addr.house_letter || ''}`.trim() : 'Tønsberg';
 
         return `
             <div class="case-card" data-id="${c.identifikator}">
                 <div>
+                    <!-- Topplinje med Saksnummer og Tydelig Status-Pill -->
                     <div class="case-card-header">
                         <span class="saksnummer-badge">${c.saksnummer || 'Uten saksnr'}</span>
-                        <span class="case-date"><i class="ri-calendar-line"></i> ${c.dato || 'Ukjent dato'}</span>
+                        <span class="status-pill status-${stageInfo.slug}">
+                            <span class="status-dot ${stageInfo.slug === 'under-behandling' ? 'status-dot-pulse' : ''}"></span>
+                            <i class="${stageInfo.icon}"></i>
+                            ${escapeHtml(stageInfo.label)}
+                        </span>
                     </div>
 
                     <h3 class="case-title">${escapeHtml(c.tittel)}</h3>
+
+                    <!-- Tydelig statusbanner i kortet -->
+                    <div class="case-status-banner status-${stageInfo.slug}">
+                        <i class="${stageInfo.icon}"></i>
+                        <span><strong>Saksstatus:</strong> ${escapeHtml(stageInfo.label)}</span>
+                    </div>
 
                     <div class="case-address-row">
                         <i class="ri-map-pin-line"></i>
@@ -242,7 +339,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
 
                 <div class="case-card-footer">
-                    <span class="doc-count"><i class="ri-file-text-line"></i> ${c.dokumenter ? c.dokumenter.length : 0} dokumenter</span>
+                    <span class="doc-count"><i class="ri-file-text-line"></i> ${c.dokumenter ? c.dokumenter.length : 0} dok. &bull; <i class="ri-calendar-line"></i> ${c.dato || ''}</span>
                     <span class="link-details">Vis evaluering <i class="ri-arrow-right-s-line"></i></span>
                 </div>
             </div>
@@ -253,15 +350,23 @@ document.addEventListener("DOMContentLoaded", () => {
         const ev = c.evaluation || {};
         const addr = c.address_info || {};
         const riskClass = getRiskBadgeClass(ev.risk_level);
+        const stageInfo = getStageInfo(ev.stage);
         const street = addr.street_name ? `${addr.street_name} ${addr.house_number || ''}`.trim() : '–';
 
         return `
             <tr>
                 <td><strong>${c.saksnummer}</strong></td>
+                <td>
+                    <span class="status-pill status-${stageInfo.slug}">
+                        <span class="status-dot"></span>
+                        <i class="${stageInfo.icon}"></i>
+                        ${escapeHtml(stageInfo.label)}
+                    </span>
+                </td>
                 <td>${c.dato}</td>
                 <td>${escapeHtml(street)} ${addr.matrikkel ? `(Gnr ${addr.matrikkel})` : ''}</td>
                 <td>${c.primary_company ? `<span class="badge badge-company"><i class="ri-briefcase-line"></i> ${escapeHtml(c.primary_company)}</span>` : '<span style="color: var(--text-subtle);">–</span>'}</td>
-                <td style="max-width: 260px; font-weight: 600;">${escapeHtml(c.tittel)}</td>
+                <td style="max-width: 240px; font-weight: 600;">${escapeHtml(c.tittel)}</td>
                 <td><span class="badge badge-category">${ev.category || 'Byggesak'}</span></td>
                 <td><span class="badge ${riskClass}">${ev.risk_level || 'Lav'}</span></td>
                 <td>${c.dokumenter ? c.dokumenter.length : 0}</td>
@@ -313,12 +418,24 @@ document.addEventListener("DOMContentLoaded", () => {
         const ev = c.evaluation || {};
         const addr = c.address_info || {};
         const riskClass = getRiskBadgeClass(ev.risk_level);
+        const stageInfo = getStageInfo(ev.stage);
         const street = addr.street_name ? `${addr.street_name} ${addr.house_number || ''}${addr.house_letter || ''}`.trim() : 'Tønsberg';
+
+        // Stepper status
+        const step1Class = stageInfo.stepIndex >= 1 ? (stageInfo.stepIndex === 1 ? 'active' : 'completed') : '';
+        const step2Class = stageInfo.stepIndex >= 2 ? (stageInfo.stepIndex === 2 ? 'active' : 'completed') : '';
+        const step3Class = stageInfo.stepIndex >= 3 ? (stageInfo.stepIndex === 3 ? 'active' : 'completed') : '';
+        const step4Class = stageInfo.stepIndex >= 4 ? (stageInfo.stepIndex === 4 ? 'active' : 'completed') : '';
 
         elements.drawerContent.innerHTML = `
             <div class="drawer-header">
                 <div class="drawer-meta-bar">
                     <span class="saksnummer-badge">${c.saksnummer}</span>
+                    <span class="status-pill status-${stageInfo.slug}">
+                        <span class="status-dot"></span>
+                        <i class="${stageInfo.icon}"></i>
+                        ${escapeHtml(stageInfo.label)}
+                    </span>
                     <span class="badge ${riskClass}">${ev.risk_level} risiko</span>
                     <span class="badge badge-category">${ev.category}</span>
                 </div>
@@ -345,6 +462,41 @@ document.addEventListener("DOMContentLoaded", () => {
                 </a>
             </div>
 
+            <!-- Tydelig Saksstatus & Fremdriftsboks -->
+            <div class="drawer-status-box">
+                <div class="drawer-status-header">
+                    <strong style="font-size: 14px; color: var(--primary); display: flex; align-items: center; gap: 6px;">
+                        <i class="ri-progress-3-line" style="color: var(--accent);"></i> Saksstatus & Behandlingsløp
+                    </strong>
+                    <span class="status-pill status-${stageInfo.slug}">
+                        <span class="status-dot"></span>
+                        <i class="${stageInfo.icon}"></i>
+                        ${escapeHtml(stageInfo.label)}
+                    </span>
+                </div>
+                <p class="drawer-status-desc">${escapeHtml(stageInfo.desc)}</p>
+
+                <!-- 4-Trinns Visuell Fremdriftslinje -->
+                <div class="progress-stepper">
+                    <div class="step-item ${step1Class}">
+                        <div class="step-circle"><i class="ri-file-text-line"></i></div>
+                        <span class="step-label">1. Mottatt / Forhåndskonferanse</span>
+                    </div>
+                    <div class="step-item ${step2Class}">
+                        <div class="step-circle"><i class="ri-time-line"></i></div>
+                        <span class="step-label">2. Saksbehandling & Varsling</span>
+                    </div>
+                    <div class="step-item ${step3Class}">
+                        <div class="step-circle"><i class="ri-checkbox-circle-line"></i></div>
+                        <span class="step-label">3. Vedtak & Rammetillatelse</span>
+                    </div>
+                    <div class="step-item ${step4Class}">
+                        <div class="step-circle"><i class="ri-building-line"></i></div>
+                        <span class="step-label">4. Igangsetting & Ferdigattest</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Evalueringsrapport -->
             <div class="eval-scorecard">
                 <div class="eval-scorecard-title">
@@ -365,6 +517,12 @@ document.addEventListener("DOMContentLoaded", () => {
                         <span class="eval-stat-num">${ev.days_in_process !== null ? ev.days_in_process + ' dager' : '–'}</span>
                         <span class="eval-stat-label">Behandlingstid</span>
                     </div>
+                </div>
+
+                <!-- Tydelig statusmerking i selve evalueringen -->
+                <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 13px; color: var(--text-muted);"><strong>Vurdert saksstadium:</strong> ${escapeHtml(ev.stage || 'Under saksbehandling')}</span>
+                    <span class="status-pill status-${stageInfo.slug}"><span class="status-dot"></span>${escapeHtml(stageInfo.label)}</span>
                 </div>
 
                 <p class="eval-summary-text">${escapeHtml(ev.summary || '')}</p>
@@ -448,11 +606,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const marker = L.marker([p.latitude, p.longitude], { icon: customIcon });
 
+            const stageInfo = getStageInfo(p.stage);
             const companyHtml = p.primary_company ? `<div style="font-size: 11px; color: #4338ca; font-weight: 600; margin-bottom: 4px;"><i class="ri-briefcase-line"></i> ${escapeHtml(p.primary_company)}</div>` : '';
 
             const popupHtml = `
                 <div style="font-family: var(--font-sans); min-width: 220px;">
-                    <span style="font-size: 11px; font-weight: 700; color: #64748b;">${p.saksnummer}</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="font-size: 11px; font-weight: 700; color: #64748b;">${p.saksnummer}</span>
+                        <span class="status-pill status-${stageInfo.slug}" style="font-size: 10px; padding: 2px 6px;"><span class="status-dot"></span>${escapeHtml(stageInfo.label)}</span>
+                    </div>
                     <h4 style="font-size: 14px; font-weight: 700; color: #0f2b48; margin: 4px 0 6px 0;">${escapeHtml(p.tittel)}</h4>
                     ${companyHtml}
                     <div style="font-size: 12px; color: #475569; margin-bottom: 8px;">
@@ -703,6 +865,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     elements.companyFilter.addEventListener("change", (e) => {
         state.selectedCompany = e.target.value;
+        state.currentPage = 1;
+        fetchCases();
+    });
+
+    elements.stageFilter.addEventListener("change", (e) => {
+        state.selectedStage = e.target.value;
         state.currentPage = 1;
         fetchCases();
     });
