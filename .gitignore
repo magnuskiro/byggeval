@@ -1,0 +1,26 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Application Data & Database
+data/*.db
+data/*.sqlite
+data/*.json
+!data/.gitkeep
+
+# Logs & Environment
+*.log
+.env
+.DS_Store
+.idea/
+.vscode/

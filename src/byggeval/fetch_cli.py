@@ -1,0 +1,83 @@
+"""
+Kommandolinjeverktøy for å hente ned byggesaker fra Tønsberg kommune.
+"""
+
+import argparse
+import sys
+import logging
+from .client import TonsbergInnsynClient
+from .evaluator import ByggesakEvaluator
+from .database import Database
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("byggeval.fetcher")
+
+
+def run_fetch(pages: int = 3, page_size: int = 20, search_term: str = None, sakstype: str = TonsbergInnsynClient.SAKSTYPE_BYGGESAK, db_path: str = "data/byggeval.db"):
+    """Kjører innhenting og lagring av byggesaker."""
+    logger.info(f"Starter innhenting fra Tønsberg kommune (Sider: {pages}, Pr side: {page_size}, Søk: '{search_term or 'Ingen'}')...")
+    
+    client = TonsbergInnsynClient()
+    db = Database(db_path=db_path)
+    
+    raw_cases = client.fetch_cases_batch(
+        max_pages=pages,
+        page_size=page_size,
+        sakstype=sakstype,
+        search_term=search_term,
+        fetch_details=True
+    )
+    
+    logger.info(f"Mottok {len(raw_cases)} unike saker fra Tønsberg API. Starter evaluering og lagring...")
+    
+    saved_cases = []
+    for raw in raw_cases:
+        try:
+            case = ByggesakEvaluator.create_byggesak_model(raw)
+            db.save_case(case)
+            saved_cases.append(case)
+        except Exception as e:
+            logger.error(f"Feil ved evaluering/lagring av sak {raw.get('identifikator')}: {e}")
+            
+    db.record_sync(cases_synced=len(saved_cases), error_count=len(raw_cases) - len(saved_cases), status="success")
+    
+    logger.info(f"Fullført! Lagret {len(saved_cases)} byggesaker i databasen.")
+    
+    # Skriv ut sammendrag
+    stats = db.get_statistics()
+    print("\n" + "=" * 60)
+    print(f"📊 BYGGEVAL STATUS - TØNSBERG KOMMUNE")
+    print("=" * 60)
+    print(f"Totalt antall saker i database: {stats['total_cases']}")
+    print(f"Aktive saker:                    {stats['active_cases']}")
+    print(f"Ferdigbehandlede:                {stats['completed_cases']}")
+    print(f"Høy/Kritisk risiko:              {stats['high_risk_cases']}")
+    print("-" * 60)
+    print("Kategorifordeling:")
+    for cat in stats['category_breakdown']:
+        print(f"  • {cat['category']}: {cat['count']}")
+    print("-" * 60)
+    print("Risikofordeling:")
+    for r in stats['risk_breakdown']:
+        print(f"  • {r['risk_level']}: {r['count']}")
+    print("=" * 60 + "\n")
+    
+    return saved_cases
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Byggeval - Hent byggesaker fra Tønsberg kommune")
+    parser.add_argument("--pages", type=int, default=3, help="Antall sider å hente (default: 3)")
+    parser.add_argument("--page-size", type=int, default=20, help="Antall saker per side (default: 20)")
+    parser.add_argument("--search", type=str, default=None, help="Søketekst for filtrering")
+    parser.add_argument("--all-types", action="store_true", help="Hent alle sakstyper, ikke bare byggesak")
+    parser.add_argument("--db", type=str, default="data/byggeval.db", help="Sti til databasefil")
+    
+    args = parser.parse_args()
+    
+    sakstype = None if args.all_types else TonsbergInnsynClient.SAKSTYPE_BYGGESAK
+    run_fetch(pages=args.pages, page_size=args.page_size, search_term=args.search, sakstype=sakstype, db_path=args.db)
+
+
+if __name__ == "__main__":
+    main()

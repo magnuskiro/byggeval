@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Byggeval – Byggesak Evaluering Tønsberg Kommune</title>
+    <meta name="description" content="Automatisk innhenting, risikovurdering og presentasjon av byggesaker fra Tønsberg kommunes postlister og innsynsløsning.">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- RemixIcon & Leaflet Map CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <!-- Chart.js & Leaflet JS -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Navbar -->
+        <header class="navbar">
+            <div class="nav-brand">
+                <div class="brand-icon">
+                    <i class="ri-building-2-fill"></i>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-title">Byggeval</span>
+                    <span class="brand-subtitle">Tønsberg Kommune Innsyn</span>
+                </div>
+            </div>
+
+            <div class="nav-controls">
+                <div class="api-status-badge" id="apiStatusBadge">
+                    <span class="pulse-dot"></span>
+                    <span class="status-text">Live Tønsberg Innsyn API</span>
+                </div>
+
+                <button class="btn btn-secondary btn-sm" id="btnSyncModal" title="Synkroniser nyeste saker">
+                    <i class="ri-refresh-line"></i>
+                    <span>Synkroniser</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Hero Section with KPI Cards -->
+        <section class="hero-section">
+            <div class="hero-header">
+                <div>
+                    <h1 class="hero-title">Byggesaksoversikt & Evaluering</h1>
+                    <p class="hero-description">
+                        Automatisk henting, analyse og risikovurdering av byggesaker og postlister fra Tønsberg kommune.
+                    </p>
+                </div>
+                <div class="last-sync-info" id="lastSyncInfo">
+                    <i class="ri-history-line"></i>
+                    <span>Laster status...</span>
+                </div>
+            </div>
+
+            <!-- Metric Cards Grid -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon icon-blue">
+                        <i class="ri-folders-line"></i>
+                    </div>
+                    <div class="metric-data">
+                        <span class="metric-value" id="kpiTotal">0</span>
+                        <span class="metric-label">Totalt antall saker</span>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon icon-amber">
+                        <i class="ri-time-line"></i>
+                    </div>
+                    <div class="metric-data">
+                        <span class="metric-value" id="kpiActive">0</span>
+                        <span class="metric-label">Under behandling</span>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon icon-red">
+                        <i class="ri-shield-alert-line"></i>
+                    </div>
+                    <div class="metric-data">
+                        <span class="metric-value" id="kpiHighRisk">0</span>
+                        <span class="metric-label">Høy / Kritisk risiko</span>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon icon-green">
+                        <i class="ri-checkbox-circle-line"></i>
+                    </div>
+                    <div class="metric-data">
+                        <span class="metric-value" id="kpiCompleted">0</span>
+                        <span class="metric-label">Ferdigbehandlet</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Navigation Tabs -->
+        <nav class="view-tabs" role="tablist">
+            <button class="tab-button active" data-tab="explorer" role="tab" aria-selected="true">
+                <i class="ri-list-check-2"></i>
+                <span>Saksutforsker</span>
+            </button>
+            <button class="tab-button" data-tab="map" role="tab" aria-selected="false">
+                <i class="ri-map-pin-2-line"></i>
+                <span>Kartvisning</span>
+            </button>
+            <button class="tab-button" data-tab="analytics" role="tab" aria-selected="false">
+                <i class="ri-pie-chart-2-line"></i>
+                <span>Statistikk & Analyse</span>
+            </button>
+        </nav>
+
+        <!-- View: Explorer (Default) -->
+        <main class="tab-pane active" id="pane-explorer">
+            <!-- Filter Bar -->
+            <div class="filter-panel">
+                <div class="search-box-wrapper">
+                    <i class="ri-search-line search-icon"></i>
+                    <input type="search" id="searchInput" placeholder="Søk på adresse, saksnummer, matrikkel (f.eks. 1009/47) eller tittel..." autocomplete="off">
+                    <button class="btn-clear hidden" id="btnClearSearch" title="Tøm søk"><i class="ri-close-line"></i></button>
+                </div>
+
+                <div class="filter-controls">
+                    <div class="filter-group">
+                        <label for="categoryFilter"><i class="ri-filter-3-line"></i> Kategori</label>
+                        <select id="categoryFilter" class="custom-select">
+                            <option value="all">Alle kategorier</option>
+                            <option value="Nybygg">Nybygg</option>
+                            <option value="Tilbygg & Påbygg">Tilbygg & Påbygg</option>
+                            <option value="Bruksendring">Bruksendring</option>
+                            <option value="Garasje & Uthus">Garasje & Uthus</option>
+                            <option value="Riving">Riving</option>
+                            <option value="Fasadeendring">Fasadeendring</option>
+                            <option value="Ulovlighet & Tilsyn">Ulovlighet & Tilsyn</option>
+                            <option value="Vann & Avløp / Utslipp">Vann & Avløp / Utslipp</option>
+                            <option value="Utemiljø & Terreng">Utemiljø & Terreng</option>
+                            <option value="Forhåndskonferanse">Forhåndskonferanse</option>
+                            <option value="Deling & Oppmåling">Deling & Oppmåling</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="riskFilter"><i class="ri-shield-line"></i> Risiko</label>
+                        <select id="riskFilter" class="custom-select">
+                            <option value="all">Alle risikonivåer</option>
+                            <option value="Lav">Lav risiko (Grønn)</option>
+                            <option value="Moderat">Moderat risiko (Gul)</option>
+                            <option value="Høy">Høy risiko (Oransje)</option>
+                            <option value="Kritisk">Kritisk risiko (Rød)</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="sortFilter"><i class="ri-sort-desc"></i> Sortering</label>
+                        <select id="sortFilter" class="custom-select">
+                            <option value="dato_desc">Dato (nyest først)</option>
+                            <option value="dato_asc">Dato (eldst først)</option>
+                            <option value="risk_desc">Høyest risikoscore</option>
+                            <option value="complexity_desc">Høyest kompleksitet</option>
+                            <option value="saksnummer_desc">Saksnummer</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Status Bar -->
+            <div class="results-header">
+                <span class="results-count" id="resultsCount">Viser 0 saker</span>
+                <div class="view-toggle">
+                    <button class="btn-icon active" id="btnViewCards" title="Kortvisning"><i class="ri-grid-fill"></i></button>
+                    <button class="btn-icon" id="btnViewTable" title="Tabellvisning"><i class="ri-table-line"></i></button>
+                </div>
+            </div>
+
+            <!-- Case Cards Container -->
+            <div class="cases-grid" id="casesContainer">
+                <!-- Cases will be dynamically rendered here -->
+            </div>
+
+            <!-- Table View Container (Alternative) -->
+            <div class="table-wrapper hidden" id="tableContainer">
+                <table class="cases-table">
+                    <thead>
+                        <tr>
+                            <th>Saksnr</th>
+                            <th>Dato</th>
+                            <th>Adresse / Matrikkel</th>
+                            <th>Tiltak / Tittel</th>
+                            <th>Kategori</th>
+                            <th>Risiko</th>
+                            <th>Kompleksitet</th>
+                            <th>Dok.</th>
+                            <th>Handling</th>
+                        </tr>
+                    </thead>
+                    <tbody id="casesTableBody">
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination-bar" id="paginationBar">
+                <button class="btn btn-secondary btn-sm" id="btnPrevPage" disabled>
+                    <i class="ri-arrow-left-s-line"></i> Forrige
+                </button>
+                <span class="pagination-info" id="paginationInfo">Side 1 av 1</span>
+                <button class="btn btn-secondary btn-sm" id="btnNextPage" disabled>
+                    Neste <i class="ri-arrow-right-s-line"></i>
+                </button>
+            </div>
+        </main>
+
+        <!-- View: Interactive Map -->
+        <main class="tab-pane hidden" id="pane-map">
+            <div class="map-layout">
+                <div class="map-sidebar">
+                    <h3 class="sidebar-title"><i class="ri-map-2-line"></i> Geografisk Fordeling</h3>
+                    <p class="sidebar-desc">Klikk på en markør i kartet for å se byggesakens adresse, tiltakskategori og evaluering.</p>
+                    
+                    <div class="map-legend">
+                        <div class="legend-item">
+                            <span class="legend-dot dot-green"></span>
+                            <span>Lav risiko</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-dot dot-amber"></span>
+                            <span>Moderat risiko</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-dot dot-orange"></span>
+                            <span>Høy risiko</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-dot dot-red"></span>
+                            <span>Kritisk risiko</span>
+                        </div>
+                    </div>
+
+                    <div class="map-stats-box" id="mapStatsBox">
+                        <span>Laster kartpunkter...</span>
+                    </div>
+                </div>
+
+                <div class="map-canvas-container">
+                    <div id="leafletMap"></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- View: Analytics & Charts -->
+        <main class="tab-pane hidden" id="pane-analytics">
+            <div class="analytics-grid">
+                <div class="chart-card">
+                    <h3 class="chart-title"><i class="ri-pie-chart-line"></i> Fordeling per Tiltakskategori</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="chartCategory"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <h3 class="chart-title"><i class="ri-shield-check-line"></i> Risikoprofil i Tønsberg</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="chartRisk"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card full-width">
+                    <h3 class="chart-title"><i class="ri-flow-chart"></i> Saksstadium & Behandlingsløp</h3>
+                    <div class="chart-wrapper-tall">
+                        <canvas id="chartStage"></canvas>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Case Detail Drawer / Modal -->
+    <div class="modal-overlay hidden" id="detailModalOverlay">
+        <div class="drawer" id="detailDrawer">
+            <button class="drawer-close" id="btnDrawerClose" title="Lukk"><i class="ri-close-line"></i></button>
+            <div class="drawer-content" id="drawerContent">
+                <!-- Innhold lastes dynamisk -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Sync Modal -->
+    <div class="modal-overlay hidden" id="syncModalOverlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="ri-refresh-line"></i> Synkroniser med Tønsberg Kommune</h3>
+                <button class="btn-icon" id="btnSyncModalClose"><i class="ri-close-line"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">
+                    Henter de nyeste byggesakene og tilknyttede journalposter direkte fra Tønsberg kommunes offentlige innsyn-API.
+                </p>
+                <div class="form-group">
+                    <label for="syncPagesInput">Antall sider å hente (ca. 20 saker per side):</label>
+                    <input type="number" id="syncPagesInput" min="1" max="20" value="3" class="custom-input">
+                </div>
+                <div class="form-group">
+                    <label for="syncSearchInput">Valgfritt søkefilter (f.eks. tilbygg, enebolig, revetal):</label>
+                    <input type="text" id="syncSearchInput" placeholder="La stå tomt for alle nyeste saker" class="custom-input">
+                </div>
+                <div class="sync-progress-box hidden" id="syncProgressBox">
+                    <div class="spinner"></div>
+                    <span id="syncProgressText">Henter saker fra Tønsberg API...</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="btnSyncCancel">Avbryt</button>
+                <button class="btn btn-primary" id="btnStartSync">Start Innhenting</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script src="/static/app.js"></script>
+</body>
+</html>
