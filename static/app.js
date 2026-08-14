@@ -609,32 +609,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 </a>
             </div>
 
-            <!-- SEKSJON 1: OFFISIELL KOMMUNAL STATUS & VEDTAK -->
-            <div class="official-decision-box ${decisionBoxClass}">
-                <div class="official-decision-header">
-                    <span class="official-badge-tag"><i class="ri-government-line"></i> Kommunens offisielle status</span>
-                    <span style="font-size: 12px; font-weight: 600; color: #475569;">Offisiell status: ${escapeHtml(c.official_status || 'Under behandling')}</span>
-                </div>
+            <!-- SEKSJON 1: KOMMUNENS OFFISIELLE ENKELTVEDTAK -->
+            ${getOfficialDecisionDrawerCard(c)}
 
-                <div class="official-decision-title">
-                    <i class="${decisionIcon}"></i>
-                    <span>${c.has_official_decision ? escapeHtml(c.official_decision_type) : 'Ingen formelt vedtak fattet ennå (Under saksbehandling)'}</span>
-                </div>
-
-                ${c.has_official_decision && c.decision_document_title ? `
-                    <div class="official-doc-item">
-                        <div><strong><i class="ri-file-shield-2-line"></i> Journalført vedtaksdokument fra kommunen:</strong></div>
-                        <div style="font-weight: 600; margin: 2px 0;">${escapeHtml(c.decision_document_title)}</div>
-                        ${c.decision_date ? `<div style="color: var(--text-muted); font-size: 11px;">Dato for vedtak: ${c.decision_date}</div>` : ''}
-                    </div>
-                ` : `
-                    <p style="font-size: 12px; color: var(--text-muted); margin: 6px 0 0 0;">
-                        Kommunen har foreløpig ikke fattet eller journalført et formelt enkeltvedtak (rammetillatelse, ett-trinnstillatelse eller ferdigattest) i saken.
-                    </p>
-                `}
-            </div>
-
-            <!-- SEKSJON 2: LOVPÅLAGT SAKSBEHANDLINGSFRIST -->
+            <!-- SEKSJON 2: LOVPÅLAGT SAKSBEHANDLINGSFRIST & FORSINKEDE MANGELBREV -->
             <div class="drawer-deadline-box">
                 <div class="deadline-header-row">
                     <strong style="font-size: 14px; color: var(--primary); display: flex; align-items: center; gap: 6px;">
@@ -643,6 +621,21 @@ document.addEventListener("DOMContentLoaded", () => {
                     </strong>
                     ${getDeadlineBadge(ev)}
                 </div>
+
+                ${ev.is_late_deficiency_notice ? `
+                    <div class="late-deficiency-callout">
+                        <div class="late-deficiency-header">
+                            <i class="ri-alarm-warning-fill"></i>
+                            <span>Lovstridig saksbehandlerforsinkelse / Forsinket mangelbrev fra kommunen</span>
+                        </div>
+                        <p>${escapeHtml(ev.statutory_consequence_note || '')}</p>
+                        <div class="late-timeline-details">
+                            <span><strong>Opprinnelig innsendt søknad:</strong> ${ev.initial_application_date || c.dato} (${ev.initial_statutory_deadline_weeks || 3} uker lovfrist utløp ${ev.initial_statutory_deadline_date || '–'})</span>
+                            <span><strong>Kommunens første respons/mangelbrev:</strong> ${ev.first_municipal_response_date || '–'} (${ev.first_response_delay_days || 0} dagers inaktivitet hos kommunen)</span>
+                            <span><strong>Lovpålagt gebyravkorting:</strong> <span class="badge-fee-cut">${ev.fee_reduction_percentage}% av saksbehandlingsgebyret bortfaller</span></span>
+                        </div>
+                    </div>
+                ` : ''}
 
                 ${ev.is_deadline_paused ? `
                     <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 12px; font-size: 12px; color: #92400e; display: flex; align-items: center; gap: 8px;">

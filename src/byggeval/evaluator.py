@@ -254,7 +254,16 @@ class ByggesakEvaluator:
             deadline_date=deadline_info["deadline_date"],
             days_remaining=deadline_info["days_remaining"],
             deadline_status=deadline_info["deadline_status"],
-            legal_basis=deadline_info["legal_basis"]
+            legal_basis=deadline_info["legal_basis"],
+            initial_application_date=deadline_info.get("initial_application_date"),
+            initial_statutory_deadline_weeks=deadline_info.get("initial_statutory_deadline_weeks", 3),
+            initial_statutory_deadline_date=deadline_info.get("initial_statutory_deadline_date"),
+            first_municipal_response_date=deadline_info.get("first_municipal_response_date"),
+            first_response_delay_days=deadline_info.get("first_response_delay_days"),
+            is_late_deficiency_notice=deadline_info.get("is_late_deficiency_notice", False),
+            fee_reduction_entitled=deadline_info.get("fee_reduction_entitled", False),
+            fee_reduction_percentage=deadline_info.get("fee_reduction_percentage", 0),
+            statutory_consequence_note=deadline_info.get("statutory_consequence_note")
         )
 
     @classmethod
@@ -272,17 +281,28 @@ class ByggesakEvaluator:
         Dersom kommunen har sendt mangelbrev / etterspurt tilleggsdokumentasjon, fryses fristen inntil
         komplett supplering er mottatt.
         """
-        weeks = 12
-        days = 84
-        legal_basis = "Plan- og bygningsloven § 21-7 4. ledd (12-ukers standardfrist løper fra komplett søknad)"
+        # 1. Bestem opprinnelig forventet lovfrist basert på innsendt søknad
+        initial_weeks = 3
+        initial_days = 21
+        if "dispensasjon" in flags or "vernesone" in flags or category in ["Nybygg", "Næring / Formålsbygg"]:
+            initial_weeks = 12
+            initial_days = 84
+
+        weeks = initial_weeks
+        days = initial_days
+        legal_basis = f"Plan- og bygningsloven § 21-7 ({initial_weeks}-ukers standardfrist løper fra komplett søknad)"
 
         if stage == "Forhåndskonferanse":
             weeks = 2
             days = 14
-            legal_basis = "Plan- og bygningsloven § 21-1 / SAK10 § 7-5 (2-ukers frist for avholdelse av forhåndskonferanse)"
+            initial_weeks = 2
+            initial_days = 14
+            legal_basis = "Plan- og bygningsloven § 21-1 / SAK10 § 7-5 (2-ukers frist for forhåndskonferanse)"
         elif stage in ["Igangsettingstillatelse", "Ferdigattest omsøkt/utstedt"]:
             weeks = 3
             days = 21
+            initial_weeks = 3
+            initial_days = 21
             legal_basis = "Plan- og bygningsloven § 21-7 2. ledd / SAK10 § 7-3/4 (3-ukers frist for igangsetting/ferdigattest)"
         elif (
             category in ["Tilbygg & Påbygg", "Garasje & Uthus", "Fasadeendring", "Riving", "Bruksendring"]
@@ -294,18 +314,27 @@ class ByggesakEvaluator:
         ):
             weeks = 3
             days = 21
+            initial_weeks = 3
+            initial_days = 21
             legal_basis = "Plan- og bygningsloven § 21-7 1. ledd / SAK10 § 7-1 (3-ukers frist: kurant tiltak i tråd med plan uten dispensasjoner)"
         elif "dispensasjon" in flags or "vernesone" in flags:
             weeks = 12
             days = 84
+            initial_weeks = 12
+            initial_days = 84
             legal_basis = "Plan- og bygningsloven § 21-7 4. ledd (12-ukers frist: krever dispensasjonsvedtak etter pbl kap 19)"
 
-        # 1. Undersøk dokumenter for mangelbrev, dispensasjonskrav og innsendt supplering
+        # 2. Undersøk dokumenter for mangelbrev, dispensasjonskrav og innsendt supplering
         initial_date_str = sak_data.get("dato")
         initial_dt = None
+        initial_deadline_dt = None
+        initial_deadline_str = None
         if initial_date_str:
             try:
+                from datetime import timedelta
                 initial_dt = datetime.strptime(initial_date_str.strip(), "%d.%m.%Y")
+                initial_deadline_dt = initial_dt + timedelta(days=initial_days)
+                initial_deadline_str = initial_deadline_dt.strftime("%d.%m.%Y")
             except Exception:
                 pass
 
@@ -314,6 +343,8 @@ class ByggesakEvaluator:
         latest_supplement_str = None
         latest_mangelbrev_dt = None
         latest_mangelbrev_str = None
+        first_municipal_response_dt = None
+        first_municipal_response_str = None
         has_dispensation_demand = False
 
         mangel_keywords = [
@@ -344,6 +375,12 @@ class ByggesakEvaluator:
             is_municipal = (not dfra) or any("kommune" in str(f).lower() for f in dfra)
             is_applicant = bool(dfra) and not is_municipal
 
+            # Registrer første kommunale respons/mangelbrev
+            if is_municipal and (not initial_dt or parsed_d > initial_dt):
+                if not first_municipal_response_dt or parsed_d < first_municipal_response_dt:
+                    first_municipal_response_dt = parsed_d
+                    first_municipal_response_str = ddato
+
             # Sjekk om det er dispensasjonskrav/mangelbrev fra kommunen
             if any(w in dtit for w in mangel_keywords) and is_municipal:
                 if not latest_mangelbrev_dt or parsed_d > latest_mangelbrev_dt:
@@ -370,7 +407,7 @@ class ByggesakEvaluator:
             else:
                 legal_basis = "Plan- og bygningsloven § 21-7 4. ledd / SAK10 § 7-2 (12-ukers frist: krever dispensasjonsvedtak etter pbl kap 19)"
 
-        # 2. Avgjør juridisk komplett søknadsdato (pbl § 21-7 jf. SAK10 § 7-4)
+        # 3. Avgjør juridisk komplett søknadsdato (pbl § 21-7 jf. SAK10 § 7-4)
         complete_dt = initial_dt
         complete_date_str = initial_date_str
 
@@ -379,13 +416,35 @@ class ByggesakEvaluator:
             complete_dt = latest_supplement_dt
             complete_date_str = latest_supplement_str
 
-        # 3. Sjekk om fristen er stanset/fryst pga ubesvart mangelbrev (SAK10 § 7-4 2. ledd)
+        # 4. Sjekk om fristen er stanset/fryst pga ubesvart mangelbrev (SAK10 § 7-4 2. ledd)
         is_deadline_paused = False
         deadline_pause_reason = None
         if latest_mangelbrev_dt:
             if not latest_supplement_dt or latest_mangelbrev_dt > latest_supplement_dt:
                 is_deadline_paused = True
                 deadline_pause_reason = f"Kommunen etterspurte tilleggsdokumentasjon/dispensasjon {latest_mangelbrev_str}. Fristen er stanset i påvente av svar."
+
+        # 5. Juridisk analyse av forsinket mangelbrev og gebyravkorting
+        is_late_deficiency_notice = False
+        fee_reduction_entitled = False
+        fee_reduction_percentage = 0
+        first_response_delay_days = None
+        statutory_consequence_note = None
+
+        if initial_dt and first_municipal_response_dt:
+            first_response_delay_days = (first_municipal_response_dt.date() - initial_dt.date()).days
+            if initial_deadline_dt and first_municipal_response_dt.date() > initial_deadline_dt.date():
+                is_late_deficiency_notice = True
+                fee_reduction_entitled = True
+                days_over = (first_municipal_response_dt.date() - initial_deadline_dt.date()).days
+                overdue_weeks = max(1, (days_over // 7) + 1)
+                fee_reduction_percentage = min(100, overdue_weeks * 25)
+                statutory_consequence_note = (
+                    f"⚠️ Forsinket mangelbrev / fristbrudd: Kommunen brukte {first_response_delay_days} dager "
+                    f"på første henvendelse (opprinnelig lovfrist var {initial_days} dager). "
+                    f"Lovpålagt fristoverskridelse inntrådte før kommunens etterlysning. "
+                    f"Søker har rettskrav på {fee_reduction_percentage}% gebyravkorting etter pbl § 21-7 4. ledd."
+                )
 
         deadline_date = None
         days_remaining = None
@@ -400,7 +459,7 @@ class ByggesakEvaluator:
             # Beregn gjenværende dager mot dagens dato
             delta = (deadline_dt.date() - datetime.now().date()).days
             days_remaining = delta
-            days_in_proc = max(0, (datetime.now().date() - complete_dt.date()).days)
+            days_in_proc = max(0, (datetime.now().date() - (initial_dt.date() if initial_dt else complete_dt.date())).days)
 
             if stage in ["Vedtatt / Tillatelse gitt", "Ferdigbehandlet"]:
                 deadline_status = "Vedtatt / Avsluttet"
@@ -423,7 +482,16 @@ class ByggesakEvaluator:
             "days_remaining": days_remaining,
             "days_in_process": days_in_proc,
             "deadline_status": deadline_status,
-            "legal_basis": legal_basis
+            "legal_basis": legal_basis,
+            "initial_application_date": initial_date_str,
+            "initial_statutory_deadline_weeks": initial_weeks,
+            "initial_statutory_deadline_date": initial_deadline_str,
+            "first_municipal_response_date": first_municipal_response_str,
+            "first_response_delay_days": first_response_delay_days,
+            "is_late_deficiency_notice": is_late_deficiency_notice,
+            "fee_reduction_entitled": fee_reduction_entitled,
+            "fee_reduction_percentage": fee_reduction_percentage,
+            "statutory_consequence_note": statutory_consequence_note
         }
 
     @staticmethod
@@ -810,6 +878,8 @@ class ByggesakEvaluator:
             decision_date=decision_info["decision_date"],
             complete_application_date=evaluation.complete_application_date if evaluation else None,
             is_deadline_paused=evaluation.is_deadline_paused if evaluation else False,
+            is_late_deficiency_notice=evaluation.is_late_deficiency_notice if evaluation else False,
+            fee_reduction_percentage=evaluation.fee_reduction_percentage if evaluation else 0,
             primary_company=primary_company,
             companies=companies,
             address_info=address_info,

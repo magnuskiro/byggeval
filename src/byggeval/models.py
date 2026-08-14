@@ -66,6 +66,17 @@ class EvaluationResult(BaseModel):
     deadline_status: str = "God tid"  # "God tid", "Nærmer seg frist", "Fristoverskridelse", "Vedtatt / Avsluttet", "Frist stanset (Mangelbrev)"
     legal_basis: Optional[str] = None  # f.eks. "Plan- og bygningsloven § 21-7 (12-ukers frist løper fra komplett søknad)"
     
+    # Juridisk analyse av opprinnelig innsending, saksbehandlingstid og forsinkede mangelbrev
+    initial_application_date: Optional[str] = None
+    initial_statutory_deadline_weeks: int = 3
+    initial_statutory_deadline_date: Optional[str] = None
+    first_municipal_response_date: Optional[str] = None
+    first_response_delay_days: Optional[int] = None
+    is_late_deficiency_notice: bool = False  # True hvis kommunen sendte mangelbrev ETTER at opprinnelig lovfrist utløp
+    fee_reduction_entitled: bool = False  # True hvis søker har lovkrav på gebyravkorting etter pbl § 21-7 4. ledd
+    fee_reduction_percentage: int = 0  # 0, 25, 50, 75, 100 %
+    statutory_consequence_note: Optional[str] = None  # Juridisk forklaring på hva som skjedde og konsekvenser
+    
     # Tydelig merking av evaluert analyse
     is_automated_analysis: bool = True
     analysis_disclaimer: str = "Automatisert analyse og faglig veiledning fra Byggeval. Erstattet ikke kommunens formelle enkeltvedtak."
@@ -93,6 +104,8 @@ class Byggesak(BaseModel):
     decision_date: Optional[str] = None  # Dato for kommunens vedtak
     complete_application_date: Optional[str] = None  # Dato for komplett søknad (fristen løper herfra)
     is_deadline_paused: bool = False  # Frist stanset pga mangelbrev
+    is_late_deficiency_notice: bool = False  # Forsinket mangelbrev fra kommunen
+    fee_reduction_percentage: int = 0  # Krav på gebyrreduksjon (0 - 100 %)
     
     # Utførende / foretak / søker
     primary_company: Optional[str] = None  # Hovedansvarlig firma / søker

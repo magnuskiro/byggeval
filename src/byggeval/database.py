@@ -549,6 +549,8 @@ class Database:
         decision_document_title = row["decision_document_title"] if "decision_document_title" in keys else None
         decision_date = row["decision_date"] if "decision_date" in keys else None
 
+        evaluation_obj = EvaluationResult(**eval_dict) if eval_dict else None
+
         return Byggesak(
             identifikator=row["identifikator"],
             saksnummer=row["saksnummer"],
@@ -566,10 +568,14 @@ class Database:
             official_decision_type=official_decision_type,
             decision_document_title=decision_document_title,
             decision_date=decision_date,
+            complete_application_date=evaluation_obj.complete_application_date if evaluation_obj else None,
+            is_deadline_paused=evaluation_obj.is_deadline_paused if evaluation_obj else False,
+            is_late_deficiency_notice=evaluation_obj.is_late_deficiency_notice if evaluation_obj else False,
+            fee_reduction_percentage=evaluation_obj.fee_reduction_percentage if evaluation_obj else 0,
             primary_company=primary_company,
             companies=companies_list,
             address_info=AddressInfo(**address_dict),
-            evaluation=EvaluationResult(**eval_dict) if eval_dict else None,
+            evaluation=evaluation_obj,
             dokumenter=dokumenter,
             created_at=row["created_at"] or "",
             updated_at=row["updated_at"] or ""
