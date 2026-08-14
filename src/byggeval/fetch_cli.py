@@ -19,7 +19,7 @@ def run_fetch(
     search_term: str = None,
     sakstype: str = TonsbergInnsynClient.SAKSTYPE_BYGGESAK,
     db_path: str = "data/byggeval.db",
-    delay: float = 0.5,
+    delay: float = 10.0,
     force_refresh: bool = False,
     count: int = None
 ):
@@ -96,7 +96,7 @@ def main():
     parser.add_argument("--pages", type=int, default=3, help="Antall sider å hente (default: 3)")
     parser.add_argument("--count", type=int, default=None, help="Mål for antall nye saker som skal hentes inn (f.eks. 150)")
     parser.add_argument("--page-size", type=int, default=20, help="Antall saker per side (default: 20)")
-    parser.add_argument("--delay", type=float, default=0.5, help="Forsinkelse i sekunder mellom forespørsler (default: 0.5s)")
+    parser.add_argument("--delay", type=float, default=10.0, help="Forsinkelse i sekunder mellom forespørsler (default: 10.0s for å unngå abuse)")
     parser.add_argument("--search", type=str, default=None, help="Søketekst for filtrering")
     parser.add_argument("--force", action="store_true", help="Hent detaljer på nytt for saker som allerede finnes i databasen")
     parser.add_argument("--all-types", action="store_true", help="Hent alle sakstyper, ikke bare byggesak")

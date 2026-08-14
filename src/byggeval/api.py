@@ -31,8 +31,8 @@ app.add_middleware(
 )
 
 db = Database(db_path=os.getenv("BYGGEVAL_DB_PATH", "data/byggeval.db"))
-# Skånsom klient med 0.6 sekunder forsinkelse mellom hvert kall
-client = TonsbergInnsynClient(delay_between_requests=0.6)
+# Skånsom klient med 10 sekunder forsinkelse mellom hvert kall for å unngå abuse
+client = TonsbergInnsynClient(delay_between_requests=10.0)
 
 # Sync status tracker
 sync_state = {
@@ -76,7 +76,11 @@ def perform_sync(pages: int, page_size: int, search: Optional[str], sakstype: Op
         
         sync_state["progress"] = f"Evaluerer og lagrer {len(raw_cases)} nye saker..."
         saved = 0
+        skipped = 0
         for raw in raw_cases:
+            if not ByggesakEvaluator.is_relevant_building_case(raw):
+                skipped += 1
+                continue
             try:
                 case = ByggesakEvaluator.create_byggesak_model(raw)
                 db.save_case(case)
@@ -84,7 +88,7 @@ def perform_sync(pages: int, page_size: int, search: Optional[str], sakstype: Op
             except Exception as e:
                 pass
                 
-        db.record_sync(cases_synced=saved, error_count=len(raw_cases) - saved, status="success")
+        db.record_sync(cases_synced=saved, error_count=len(raw_cases) - saved - skipped, status="success")
         if saved == 0 and len(existing_ids) > 0:
             sync_state["last_result"] = "Ingen nye saker funnet (databasen er allerede oppdatert)."
         else:

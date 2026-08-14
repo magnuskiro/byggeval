@@ -35,7 +35,9 @@ class TonsbergInnsynClient:
         "X-ANTI-CSRF": "1"
     }
 
-    def __init__(self, timeout: int = 15, delay_between_requests: float = 0.5, max_retries: int = 3):
+    DEFAULT_DELAY = 10.0  # 10 sekunders høflig ventetid per sak for å unngå abuse
+
+    def __init__(self, timeout: int = 20, delay_between_requests: float = 10.0, max_retries: int = 3):
         self.timeout = timeout
         self.delay_between_requests = delay_between_requests
         self.max_retries = max_retries
