@@ -1377,6 +1377,121 @@ body {
     background: #dbeafe;
 }
 
+/* Official Municipal Decision Box */
+.official-decision-box {
+    background: #f0fdf4;
+    border: 2px solid #86efac;
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-sm);
+}
+
+.official-decision-box.decision-pending {
+    background: #f8fafc;
+    border: 2px solid #cbd5e1;
+}
+
+.official-decision-box.decision-rejected {
+    background: #fef2f2;
+    border: 2px solid #fca5a5;
+}
+
+.official-decision-box.decision-permit {
+    background: #ecfdf5;
+    border: 2px solid #6ee7b7;
+}
+
+.official-decision-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.official-badge-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #1e293b;
+    background: rgba(255, 255, 255, 0.8);
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.official-decision-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--primary);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.official-doc-item {
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #334155;
+    margin-top: 8px;
+}
+
+/* Byggeval Analysis Disclaimer Callout */
+.eval-disclaimer-callout {
+    background: #f8fafc;
+    border-left: 4px solid #6366f1;
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #475569;
+}
+
+.eval-disclaimer-callout strong {
+    color: #312e81;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+}
+
+.badge-byggeval-eval {
+    background: #eef2ff;
+    color: #4338ca;
+    border: 1px solid #c7d2fe;
+    font-weight: 700;
+}
+
+.badge-official-approved {
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+    font-weight: 700;
+}
+
+.badge-official-pending {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+    font-weight: 600;
+}
+
+.badge-official-rejected {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+    font-weight: 700;
+}
+
 /* Evaluation Scorecard */
 .eval-scorecard {
     background: #f8fafc;
@@ -1384,16 +1499,17 @@ body {
     border-radius: var(--radius-lg);
     padding: 20px;
     margin-bottom: 28px;
+    position: relative;
 }
 
 .eval-scorecard-title {
     font-size: 15px;
     font-weight: 800;
     color: var(--primary);
-    margin-bottom: 14px;
+    margin-bottom: 12px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: space-between;
 }
 
 .eval-stats-row {

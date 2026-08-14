@@ -50,6 +50,12 @@ class Database:
                     days_remaining INTEGER,
                     deadline_status TEXT,
                     
+                    -- Offisielle kommunale vedtak
+                    has_official_decision INTEGER,
+                    official_decision_type TEXT,
+                    decision_document_title TEXT,
+                    decision_date TEXT,
+                    
                     -- Ekstraherte adressefelt
                     street_name TEXT,
                     house_number TEXT,
@@ -96,6 +102,22 @@ class Database:
                 cursor.execute("ALTER TABLE cases ADD COLUMN deadline_status TEXT")
             except sqlite3.OperationalError:
                 pass
+            try:
+                cursor.execute("ALTER TABLE cases ADD COLUMN has_official_decision INTEGER")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                cursor.execute("ALTER TABLE cases ADD COLUMN official_decision_type TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                cursor.execute("ALTER TABLE cases ADD COLUMN decision_document_title TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                cursor.execute("ALTER TABLE cases ADD COLUMN decision_date TEXT")
+            except sqlite3.OperationalError:
+                pass
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS sync_history (
@@ -114,6 +136,7 @@ class Database:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_saksnummer ON cases(saksnummer)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_company ON cases(primary_company)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_days_remaining ON cases(days_remaining)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_decision ON cases(has_official_decision, official_decision_type)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_gnr_bnr ON cases(gnr, bnr)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_stage ON cases(stage)")
             conn.commit()
@@ -151,11 +174,12 @@ class Database:
                     identifikator, saksnummer, tittel, undertittel, sakstype, saks_beskrivelse,
                     dato, saksbehandler, status_tittel, er_ferdig, innsyn_url,
                     primary_company, companies_text, days_remaining, deadline_status,
+                    has_official_decision, official_decision_type, decision_document_title, decision_date,
                     street_name, house_number, gnr, bnr, matrikkel, latitude, longitude,
                     category, subcategory, complexity, complexity_score, risk_level, risk_score, stage,
                     address_json, evaluation_json, dokumenter_json, raw_json,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(identifikator) DO UPDATE SET
                     saksnummer=excluded.saksnummer,
                     tittel=excluded.tittel,
@@ -171,6 +195,10 @@ class Database:
                     companies_text=excluded.companies_text,
                     days_remaining=excluded.days_remaining,
                     deadline_status=excluded.deadline_status,
+                    has_official_decision=excluded.has_official_decision,
+                    official_decision_type=excluded.official_decision_type,
+                    decision_document_title=excluded.decision_document_title,
+                    decision_date=excluded.decision_date,
                     street_name=excluded.street_name,
                     house_number=excluded.house_number,
                     gnr=excluded.gnr,
@@ -205,6 +233,10 @@ class Database:
                 companies_str,
                 days_remaining,
                 deadline_status,
+                1 if case.has_official_decision else 0,
+                case.official_decision_type,
+                case.decision_document_title,
+                case.decision_date,
                 case.address_info.street_name,
                 case.address_info.house_number,
                 case.address_info.gnr,
@@ -474,6 +506,11 @@ class Database:
         companies_raw = row["companies_text"] if ("companies_text" in keys and row["companies_text"]) else ""
         companies_list = [c.strip() for c in companies_raw.split("|") if c.strip()] if companies_raw else []
         primary_company = row["primary_company"] if ("primary_company" in keys) else None
+        
+        has_official_decision = bool(row["has_official_decision"]) if "has_official_decision" in keys and row["has_official_decision"] is not None else False
+        official_decision_type = row["official_decision_type"] if "official_decision_type" in keys else "Ikke avgjort (Under behandling)"
+        decision_document_title = row["decision_document_title"] if "decision_document_title" in keys else None
+        decision_date = row["decision_date"] if "decision_date" in keys else None
 
         return Byggesak(
             identifikator=row["identifikator"],
@@ -487,6 +524,11 @@ class Database:
             status_tittel=row["status_tittel"] or "Under behandling",
             er_ferdig=bool(row["er_ferdig"]),
             innsyn_url=row["innsyn_url"],
+            official_status=row["status_tittel"] or "Under behandling",
+            has_official_decision=has_official_decision,
+            official_decision_type=official_decision_type,
+            decision_document_title=decision_document_title,
+            decision_date=decision_date,
             primary_company=primary_company,
             companies=companies_list,
             address_info=AddressInfo(**address_dict),

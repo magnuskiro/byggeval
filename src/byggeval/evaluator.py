@@ -493,8 +493,112 @@ class ByggesakEvaluator:
                 paragraf_id=d.get("paragrafID", "")
             ))
 
+    @staticmethod
+    def extract_official_decision(raw_sak: Dict[str, Any], dokumenter: List[Dokument]) -> Dict[str, Any]:
+        """
+        Analyserer journalposter for å finne om det foreligger et offisielt enkeltvedtak fra Tønsberg kommune.
+        Skiller strengt mellom søkers innsendte søknader og kommunens formelle godkjenninger/avslag.
+        """
+        has_decision = False
+        decision_type = "Ikke avgjort (Under behandling)"
+        decision_doc_title = None
+        decision_date = None
+
+        # Prioritert leting etter offisielle vedtaksdokumenter
+        for d in dokumenter:
+            t = d.tittel.lower()
+            
+            # 1. Sjekk ferdigattest
+            if ("ferdigattest" in t or "brukstillatelse" in t) and "søknad" not in t and "anmodning" not in t:
+                has_decision = True
+                decision_type = "Ferdigattest utstedt"
+                decision_doc_title = d.tittel
+                decision_date = d.dato
+                break
+                
+            # 2. Sjekk igangsettingstillatelse
+            if "igangsettingstillatelse" in t and "søknad" not in t and "anmodning" not in t:
+                has_decision = True
+                decision_type = "Innvilget / Igangsettingstillatelse gitt"
+                decision_doc_title = d.tittel
+                decision_date = d.dato
+                break
+                
+            # 3. Sjekk rammetillatelse eller ett-trinnstillatelse
+            if ("rammetillatelse" in t or "ett-trinnstillatelse" in t or "tillatelse i ett trinn" in t or "tillatelse til tiltak" in t) and "søknad" not in t and "anmodning" not in t:
+                has_decision = True
+                decision_type = "Innvilget / Tillatelse gitt"
+                decision_doc_title = d.tittel
+                decision_date = d.dato
+                break
+
+            # 4. Sjekk delegert vedtak / godkjenning
+            if ("delegert vedtak" in t or "vedtak om tillatelse" in t or "svar på søknad - godkjent" in t) and "søknad" not in t:
+                has_decision = True
+                decision_type = "Innvilget / Delegert vedtak"
+                decision_doc_title = d.tittel
+                decision_date = d.dato
+                break
+
+            # 5. Sjekk avslag
+            if ("vedtak om avslag" in t or "avslag på søknad" in t or "avslått" in t) and "søknad" not in t:
+                has_decision = True
+                decision_type = "Avslått av kommunen"
+                decision_doc_title = d.tittel
+                decision_date = d.dato
+                break
+
+            # 6. Sjekk pålegg / stans
+            if "pålegg om stans" in t or "stansingsvedtak" in t or "vedtak om pålegg" in t:
+                has_decision = True
+                decision_type = "Pålegg / Stansingsvedtak"
+                decision_doc_title = d.tittel
+                decision_date = d.dato
+                break
+
+        return {
+            "has_official_decision": has_decision,
+            "official_decision_type": decision_type,
+            "decision_document_title": decision_doc_title,
+            "decision_date": decision_date
+        }
+
+    @classmethod
+    def create_byggesak_model(cls, raw_sak: Dict[str, Any]) -> Byggesak:
+        """Konverterer rå API-data fra Tønsberg til en fullverdig Byggesak med evaluering."""
+        title = raw_sak.get("tittel", "")
+        undertittel = raw_sak.get("undertittel", "")
+        identifikator = raw_sak.get("identifikator", "")
+        saksnummer = raw_sak.get("saksnummer", "")
+        dato = raw_sak.get("dato", "")
+        saksbehandler = raw_sak.get("saksbehandler")
+        
+        # Parse adresse og matrikkel
+        address_info = cls.parse_address_and_matrikkel(title, undertittel)
+
+        # Parse dokumenter
+        dokumenter: List[Dokument] = []
+        for d in raw_sak.get("dokumenter", []):
+            dokumenter.append(Dokument(
+                identifikator=d.get("identifikator", ""),
+                friendly_id=d.get("friendlyId"),
+                tittel=d.get("tittel", ""),
+                undertittel=d.get("undertittel", ""),
+                fra=d.get("fra", []) if isinstance(d.get("fra"), list) else [],
+                til=d.get("til", []) if isinstance(d.get("til"), list) else [],
+                dato=d.get("dato"),
+                saksbehandler=d.get("saksbehandler"),
+                ansvarlig_enhet=d.get("ansvarligEnhet"),
+                antall_vedlegg=d.get("antallVedlegg", 0),
+                synlighet=d.get("synlighet", 1),
+                paragraf_id=d.get("paragrafID", "")
+            ))
+
         # Ekstraher firmaer og utførende foretak
         primary_company, companies = cls.extract_companies(raw_sak, dokumenter)
+
+        # Ekstraher offisielt kommunalt vedtak
+        decision_info = cls.extract_official_decision(raw_sak, dokumenter)
 
         # Kjør evaluering
         evaluation = cls.evaluate_case(raw_sak)
@@ -517,6 +621,11 @@ class ByggesakEvaluator:
             status_tittel=status_tittel,
             er_ferdig=er_ferdig,
             innsyn_url=innsyn_url,
+            official_status=status_tittel,
+            has_official_decision=decision_info["has_official_decision"],
+            official_decision_type=decision_info["official_decision_type"],
+            decision_document_title=decision_info["decision_document_title"],
+            decision_date=decision_info["decision_date"],
             primary_company=primary_company,
             companies=companies,
             address_info=address_info,

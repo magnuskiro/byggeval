@@ -188,8 +188,29 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // =========================================================================
-    // Stage & Deadline Helpers
+    // Decision, Stage & Deadline Helpers
     // =========================================================================
+
+    function getOfficialDecisionBadge(c) {
+        if (!c) return '';
+        if (c.has_official_decision) {
+            const dtype = c.official_decision_type || 'Innvilget vedtak';
+            const docInfo = c.decision_document_title ? `Vedtaksdokument: "${c.decision_document_title}" (${c.decision_date || c.dato})` : '';
+
+            if (dtype.includes('Avslått') || dtype.includes('Avslag')) {
+                return `<span class="badge badge-official-rejected" title="${escapeHtml(docInfo)}"><i class="ri-close-circle-fill"></i> Offisielt vedtak: ${escapeHtml(dtype)}</span>`;
+            }
+            if (dtype.includes('Ferdigattest')) {
+                return `<span class="badge badge-official-approved" title="${escapeHtml(docInfo)}"><i class="ri-award-fill"></i> Offisielt vedtak: Ferdigattest</span>`;
+            }
+            if (dtype.includes('Igangsetting')) {
+                return `<span class="badge badge-official-approved" title="${escapeHtml(docInfo)}"><i class="ri-hammer-fill"></i> Offisielt vedtak: Igangsetting gitt</span>`;
+            }
+            return `<span class="badge badge-official-approved" title="${escapeHtml(docInfo)}"><i class="ri-checkbox-circle-fill"></i> Offisielt vedtak: ${escapeHtml(dtype)}</span>`;
+        }
+
+        return `<span class="badge badge-official-pending" title="Ingen formelt vedtaksdokument registrert ennå"><i class="ri-loader-2-line"></i> Kommune: ${escapeHtml(c.official_status || 'Under behandling')}</span>`;
+    }
 
     function getStageInfo(stageRaw) {
         const stage = stageRaw || "Under saksbehandling";
@@ -329,13 +350,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const addr = c.address_info || {};
         const riskClass = getRiskBadgeClass(ev.risk_level);
         const stageInfo = getStageInfo(ev.stage);
+        const officialBadgeHtml = getOfficialDecisionBadge(c);
         const deadlineBadgeHtml = getDeadlineBadge(ev);
         const street = addr.street_name ? `${addr.street_name} ${addr.house_number || ''}${addr.house_letter || ''}`.trim() : 'Tønsberg';
 
         return `
             <div class="case-card" data-id="${c.identifikator}">
                 <div>
-                    <!-- Topplinje med Saksnummer og Tydelig Status-Pill -->
+                    <!-- Topplinje med Saksnummer og Kommunal Status-Pill -->
                     <div class="case-card-header">
                         <span class="saksnummer-badge">${c.saksnummer || 'Uten saksnr'}</span>
                         <span class="status-pill status-${stageInfo.slug}">
@@ -347,10 +369,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
                     <h3 class="case-title">${escapeHtml(c.tittel)}</h3>
 
-                    <!-- Tydelig statusbanner i kortet -->
+                    <!-- Tydelig statusbanner fra kommunen -->
                     <div class="case-status-banner status-${stageInfo.slug}">
                         <i class="${stageInfo.icon}"></i>
-                        <span><strong>Saksstatus:</strong> ${escapeHtml(stageInfo.label)}</span>
+                        <span><strong>Kommunens status:</strong> ${c.has_official_decision ? escapeHtml(c.official_decision_type) : escapeHtml(stageInfo.label)}</span>
                     </div>
 
                     <div class="case-address-row">
@@ -360,7 +382,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     </div>
 
                     <div class="badges-row">
-                        <span class="badge ${riskClass}"><i class="ri-shield-line"></i> ${ev.risk_level || 'Ukjent'} risiko</span>
+                        ${officialBadgeHtml}
+                        <span class="badge ${riskClass}" title="Byggeval automatisert risikovurdering"><i class="ri-sparkling-fill"></i> ${ev.risk_level || 'Ukjent'} risiko</span>
                         ${deadlineBadgeHtml}
                         <span class="badge badge-category">${ev.category || 'Byggesak'}</span>
                         ${c.primary_company ? `<span class="badge badge-company" title="Utførende / Firma"><i class="ri-briefcase-line"></i> ${escapeHtml(c.primary_company)}</span>` : ''}
@@ -369,7 +392,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 <div class="case-card-footer">
                     <span class="doc-count"><i class="ri-file-text-line"></i> ${c.dokumenter ? c.dokumenter.length : 0} dok. &bull; <i class="ri-calendar-line"></i> ${c.dato || ''}</span>
-                    <span class="link-details">Vis evaluering <i class="ri-arrow-right-s-line"></i></span>
+                    <span class="link-details">Vis vedtak & analyse <i class="ri-arrow-right-s-line"></i></span>
                 </div>
             </div>
         `;
@@ -379,27 +402,21 @@ document.addEventListener("DOMContentLoaded", () => {
         const ev = c.evaluation || {};
         const addr = c.address_info || {};
         const riskClass = getRiskBadgeClass(ev.risk_level);
-        const stageInfo = getStageInfo(ev.stage);
+        const officialBadgeHtml = getOfficialDecisionBadge(c);
         const deadlineBadgeHtml = getDeadlineBadge(ev);
         const street = addr.street_name ? `${addr.street_name} ${addr.house_number || ''}`.trim() : '–';
 
         return `
             <tr>
                 <td><strong>${c.saksnummer}</strong></td>
-                <td>
-                    <span class="status-pill status-${stageInfo.slug}">
-                        <span class="status-dot"></span>
-                        <i class="${stageInfo.icon}"></i>
-                        ${escapeHtml(stageInfo.label)}
-                    </span>
-                </td>
+                <td>${officialBadgeHtml}</td>
                 <td>${deadlineBadgeHtml}</td>
                 <td>${c.dato}</td>
                 <td>${escapeHtml(street)} ${addr.matrikkel ? `(Gnr ${addr.matrikkel})` : ''}</td>
                 <td>${c.primary_company ? `<span class="badge badge-company"><i class="ri-briefcase-line"></i> ${escapeHtml(c.primary_company)}</span>` : '<span style="color: var(--text-subtle);">–</span>'}</td>
-                <td style="max-width: 240px; font-weight: 600;">${escapeHtml(c.tittel)}</td>
+                <td style="max-width: 220px; font-weight: 600;">${escapeHtml(c.tittel)}</td>
                 <td><span class="badge badge-category">${ev.category || 'Byggesak'}</span></td>
-                <td><span class="badge ${riskClass}">${ev.risk_level || 'Lav'}</span></td>
+                <td><span class="badge ${riskClass}"><i class="ri-sparkling-fill"></i> ${ev.risk_level || 'Lav'}</span></td>
                 <td>
                     <button class="btn btn-secondary btn-sm btn-table-detail" data-id="${c.identifikator}">
                         Åpne
@@ -425,7 +442,7 @@ document.addEventListener("DOMContentLoaded", () => {
         elements.drawerContent.innerHTML = `
             <div style="text-align: center; padding: 80px 20px;">
                 <div class="spinner" style="margin: 0 auto 16px auto;"></div>
-                <p>Laster inn saksdetaljer og evalueringsrapport...</p>
+                <p>Laster inn kommunale vedtak og evalueringsanalyse...</p>
             </div>
         `;
 
@@ -464,16 +481,25 @@ document.addEventListener("DOMContentLoaded", () => {
         const daysRem = ev.days_remaining;
         
         let deadlineColor = '#10b981';
-        let deadlineText = `${daysRem} dager gjenstår`;
         if (ev.deadline_status === 'Fristoverskridelse') {
             deadlineColor = '#ef4444';
-            deadlineText = `Frist overskredet med ${Math.abs(daysRem || 0)} dager`;
         } else if (ev.deadline_status === 'Nærmer seg frist') {
             deadlineColor = '#f59e0b';
-            deadlineText = `Snarlig frist (${daysRem} dager igjen)`;
         } else if (ev.deadline_status === 'Vedtatt / Avsluttet') {
             deadlineColor = '#3b82f6';
-            deadlineText = `Behandlet på ${daysInProc} dager`;
+        }
+
+        // Decision styling
+        let decisionBoxClass = 'decision-pending';
+        let decisionIcon = 'ri-time-line';
+        if (c.has_official_decision) {
+            if (c.official_decision_type.includes('Avslått') || c.official_decision_type.includes('Avslag')) {
+                decisionBoxClass = 'decision-rejected';
+                decisionIcon = 'ri-close-circle-fill';
+            } else {
+                decisionBoxClass = 'decision-permit';
+                decisionIcon = 'ri-checkbox-circle-fill';
+            }
         }
 
         elements.drawerContent.innerHTML = `
@@ -485,7 +511,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         <i class="${stageInfo.icon}"></i>
                         ${escapeHtml(stageInfo.label)}
                     </span>
-                    <span class="badge ${riskClass}">${ev.risk_level} risiko</span>
                     <span class="badge badge-category">${ev.category}</span>
                 </div>
 
@@ -511,7 +536,32 @@ document.addEventListener("DOMContentLoaded", () => {
                 </a>
             </div>
 
-            <!-- Lovpålagt Saksbehandlingsfrist & Gjenværende Tid -->
+            <!-- SEKSJON 1: OFFISIELL KOMMUNAL STATUS & VEDTAK -->
+            <div class="official-decision-box ${decisionBoxClass}">
+                <div class="official-decision-header">
+                    <span class="official-badge-tag"><i class="ri-government-line"></i> Offisiell status fra Tønsberg kommune</span>
+                    <span style="font-size: 12px; font-weight: 600; color: #475569;">Offisiell status: ${escapeHtml(c.official_status || 'Under behandling')}</span>
+                </div>
+
+                <div class="official-decision-title">
+                    <i class="${decisionIcon}"></i>
+                    <span>${c.has_official_decision ? escapeHtml(c.official_decision_type) : 'Ingen formelt vedtak fattet ennå (Under saksbehandling)'}</span>
+                </div>
+
+                ${c.has_official_decision && c.decision_document_title ? `
+                    <div class="official-doc-item">
+                        <div><strong><i class="ri-file-shield-2-line"></i> Journalført vedtaksdokument:</strong></div>
+                        <div style="font-weight: 600; margin: 2px 0;">${escapeHtml(c.decision_document_title)}</div>
+                        ${c.decision_date ? `<div style="color: var(--text-muted); font-size: 11px;">Dato for vedtak: ${c.decision_date}</div>` : ''}
+                    </div>
+                ` : `
+                    <p style="font-size: 12px; color: var(--text-muted); margin: 6px 0 0 0;">
+                        Kommunen har foreløpig ikke fattet eller journalført et formelt enkeltvedtak (rammetillatelse, ett-trinnstillatelse eller ferdigattest) i saken.
+                    </p>
+                `}
+            </div>
+
+            <!-- SEKSJON 2: LOVPÅLAGT SAKSBEHANDLINGSFRIST -->
             <div class="drawer-deadline-box">
                 <div class="deadline-header-row">
                     <strong style="font-size: 14px; color: var(--primary); display: flex; align-items: center; gap: 6px;">
@@ -551,11 +601,64 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
             </div>
 
-            <!-- Tydelig Saksstatus & Fremdriftsboks -->
+            <!-- SEKSJON 3: BYGGEVAL AUTOMATISERT FAGLIG EVALUERING & ANBEFALING -->
+            <div class="eval-scorecard">
+                <div class="eval-scorecard-title">
+                    <span style="display: flex; align-items: center; gap: 8px;">
+                        <i class="ri-sparkling-fill" style="color: #f59e0b;"></i>
+                        <span>Byggeval Evalueringsanalyse</span>
+                    </span>
+                    <span class="badge badge-byggeval-eval"><i class="ri-cpu-line"></i> Evaluert anbefaling</span>
+                </div>
+
+                <!-- Tydelig ansvarsfraskrivelse / skille mellom offisielt vedtak og analyse -->
+                <div class="eval-disclaimer-callout">
+                    <strong><i class="ri-information-line"></i> Evaluert faglig anbefaling (Ikke bindende enkeltvedtak)</strong>
+                    <span>Dette er en automatisert analyse og faglig veiledning generert av Byggeval basert på sakens dokumenter og Plan- og bygningsloven. Erstattet ikke kommunens formelle enkeltvedtak.</span>
+                </div>
+
+                <div class="eval-stats-row">
+                    <div class="eval-stat-box">
+                        <span class="eval-stat-num">${ev.risk_score || 0}/100</span>
+                        <span class="eval-stat-label">Byggeval Risikoscore</span>
+                    </div>
+                    <div class="eval-stat-box">
+                        <span class="eval-stat-num">${ev.complexity_score || 0}/10</span>
+                        <span class="eval-stat-label">Kompleksitet (${ev.complexity})</span>
+                    </div>
+                    <div class="eval-stat-box">
+                        <span class="eval-stat-num">${daysInProc} dager</span>
+                        <span class="eval-stat-label">Behandlingstid</span>
+                    </div>
+                </div>
+
+                <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 13px; color: var(--text-muted);"><strong>Vurdert saksstadium:</strong> ${escapeHtml(ev.stage || 'Under saksbehandling')}</span>
+                    <span class="status-pill status-${stageInfo.slug}"><span class="status-dot"></span>${escapeHtml(stageInfo.label)}</span>
+                </div>
+
+                <p class="eval-summary-text">${escapeHtml(ev.summary || '')}</p>
+
+                ${ev.risk_factors && ev.risk_factors.length > 0 ? `
+                    <div class="eval-factors-list">
+                        <strong style="font-size: 12px; text-transform: uppercase; color: #991b1b;">Identifiserte risikofaktorer fra Byggeval:</strong>
+                        ${ev.risk_factors.map(f => `<div class="factor-item"><i class="ri-alert-fill"></i> <span>${escapeHtml(f)}</span></div>`).join("")}
+                    </div>
+                ` : ''}
+
+                ${ev.recommendation ? `
+                    <div class="eval-recommendation-box" style="margin-top: 14px;">
+                        <strong><i class="ri-lightbulb-line"></i> Veiledende saksbehandleranbefaling fra Byggeval:</strong>
+                        <p style="margin-top: 4px;">${escapeHtml(ev.recommendation)}</p>
+                    </div>
+                ` : ''}
+            </div>
+
+            <!-- SEKSJON 4: BEHANDLINGSLØP -->
             <div class="drawer-status-box">
                 <div class="drawer-status-header">
                     <strong style="font-size: 14px; color: var(--primary); display: flex; align-items: center; gap: 6px;">
-                        <i class="ri-progress-3-line" style="color: var(--accent);"></i> Saksstatus & Behandlingsløp
+                        <i class="ri-progress-3-line" style="color: var(--accent);"></i> Behandlingsløp & Fremdrift
                     </strong>
                     <span class="status-pill status-${stageInfo.slug}">
                         <span class="status-dot"></span>
@@ -586,52 +689,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
             </div>
 
-            <!-- Evalueringsrapport -->
-            <div class="eval-scorecard">
-                <div class="eval-scorecard-title">
-                    <i class="ri-sparkling-fill" style="color: #f59e0b;"></i>
-                    <span>Faglig Evalueringsrapport</span>
-                </div>
-
-                <div class="eval-stats-row">
-                    <div class="eval-stat-box">
-                        <span class="eval-stat-num">${ev.risk_score || 0}/100</span>
-                        <span class="eval-stat-label">Risikoscore</span>
-                    </div>
-                    <div class="eval-stat-box">
-                        <span class="eval-stat-num">${ev.complexity_score || 0}/10</span>
-                        <span class="eval-stat-label">Kompleksitet (${ev.complexity})</span>
-                    </div>
-                    <div class="eval-stat-box">
-                        <span class="eval-stat-num">${daysInProc} dager</span>
-                        <span class="eval-stat-label">Behandlingstid</span>
-                    </div>
-                </div>
-
-                <!-- Tydelig statusmerking i selve evalueringen -->
-                <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-size: 13px; color: var(--text-muted);"><strong>Vurdert saksstadium:</strong> ${escapeHtml(ev.stage || 'Under saksbehandling')}</span>
-                    <span class="status-pill status-${stageInfo.slug}"><span class="status-dot"></span>${escapeHtml(stageInfo.label)}</span>
-                </div>
-
-                <p class="eval-summary-text">${escapeHtml(ev.summary || '')}</p>
-
-                ${ev.risk_factors && ev.risk_factors.length > 0 ? `
-                    <div class="eval-factors-list">
-                        <strong style="font-size: 12px; text-transform: uppercase; color: #991b1b;">Identifiserte risikofaktorer:</strong>
-                        ${ev.risk_factors.map(f => `<div class="factor-item"><i class="ri-alert-fill"></i> <span>${escapeHtml(f)}</span></div>`).join("")}
-                    </div>
-                ` : ''}
-
-                ${ev.recommendation ? `
-                    <div class="eval-recommendation-box" style="margin-top: 14px;">
-                        <strong><i class="ri-lightbulb-line"></i> Saksbehandleranbefaling:</strong>
-                        <p style="margin-top: 4px;">${escapeHtml(ev.recommendation)}</p>
-                    </div>
-                ` : ''}
-            </div>
-
-            <!-- Dokumenter & Journalposter -->
+            <!-- SEKSJON 5: DOKUMENTER & JOURNALPOSTER -->
             <div class="docs-section">
                 <h3 class="section-heading">
                     <i class="ri-folder-open-line"></i>
@@ -708,7 +766,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${companyHtml}
                     <div style="font-size: 12px; color: #475569; margin-bottom: 8px;">
                         <strong>Kategori:</strong> ${p.category}<br>
-                        <strong>Risiko:</strong> ${p.risk_level} (${p.risk_score}/100)
+                        <strong>Byggeval Risiko:</strong> ${p.risk_level} (${p.risk_score}/100)
                     </div>
                     <button class="btn btn-primary btn-sm btn-map-popup" data-id="${p.identifikator}" style="width: 100%;">
                         Åpne sak

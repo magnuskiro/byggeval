@@ -152,3 +152,54 @@ def test_statutory_deadlines():
     assert e2.statutory_deadline_weeks == 12
     assert e2.statutory_deadline_days == 84
     assert "12-ukers frist" in e2.legal_basis
+
+
+def test_extract_official_decision():
+    """Tester deteksjon av kommunens offisielle vedtak i journalposter."""
+    # 1. Sak med innvilget rammetillatelse fra kommunen
+    raw_sak = {
+        "identifikator": "test-vedtak-1",
+        "saksnummer": "2026/100",
+        "tittel": "Storgaten 1 - 50/1 - rammetillatelse",
+        "dato": "01.06.2026",
+        "dokumenter": [
+            {
+                "identifikator": "doc-1",
+                "tittel": "Søknad om rammetillatelse",
+                "fra": ["Arkitekt AS"],
+                "dato": "01.05.2026"
+            },
+            {
+                "identifikator": "doc-2",
+                "tittel": "Storgaten 1 - 50/1 - rammetillatelse § 20-3",
+                "fra": ["Tønsberg kommune"],
+                "dato": "01.06.2026"
+            }
+        ]
+    }
+    case = ByggesakEvaluator.create_byggesak_model(raw_sak)
+    assert case.has_official_decision is True
+    assert "Tillatelse gitt" in case.official_decision_type or "Rammetillatelse" in case.official_decision_type
+    assert case.decision_document_title == "Storgaten 1 - 50/1 - rammetillatelse § 20-3"
+    assert case.decision_date == "01.06.2026"
+    assert case.evaluation.is_automated_analysis is True
+    assert "Automatisert analyse" in case.evaluation.analysis_disclaimer
+
+    # 2. Sak som kun er under behandling (kun søknad innsendt)
+    raw_sak_pending = {
+        "identifikator": "test-pending-1",
+        "saksnummer": "2026/200",
+        "tittel": "Løkkeveien 2 - 10/5 - søknad om tilbygg",
+        "dato": "10.08.2026",
+        "dokumenter": [
+            {
+                "identifikator": "doc-3",
+                "tittel": "Søknad om tillatelse i ett trinn",
+                "fra": ["Byggmester AS"],
+                "dato": "10.08.2026"
+            }
+        ]
+    }
+    case_pending = ByggesakEvaluator.create_byggesak_model(raw_sak_pending)
+    assert case_pending.has_official_decision is False
+    assert "Under behandling" in case_pending.official_decision_type
