@@ -952,6 +952,67 @@ class ByggesakEvaluator:
                     "decision_date": dato
                 }
 
+        # Fallback på sakens overskrift / tittel dersom saken ikke har journalposter lagret
+        case_title = (raw_sak.get("tittel") or raw_sak.get("saksBeskrivelse") or raw_sak.get("undertittel") or "").lower()
+        case_date = raw_sak.get("dato")
+        if case_title:
+            if "avslag på dispensasjon" in case_title or "delvis avslag" in case_title:
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Delvis innvilget / Avslag på dispensasjon",
+                    "decision_document_title": raw_sak.get("tittel"),
+                    "decision_date": case_date
+                }
+            if ("avslag" in case_title or "avslått" in case_title) and "varsel" not in case_title and "klage" not in case_title and not case_title.startswith("søknad"):
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Avslått av kommunen",
+                    "decision_document_title": raw_sak.get("tittel"),
+                    "decision_date": case_date
+                }
+            if "avvisning" in case_title or "avvist" in case_title:
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Avvist av kommunen",
+                    "decision_document_title": raw_sak.get("tittel"),
+                    "decision_date": case_date
+                }
+            if "varsel om avslag" in case_title:
+                return {
+                    "has_official_decision": False,
+                    "official_decision_type": "Varsel om avslag",
+                    "decision_document_title": raw_sak.get("tittel"),
+                    "decision_date": case_date
+                }
+            if "trukket" in case_title or "tilbaketrekking" in case_title:
+                return {
+                    "has_official_decision": False,
+                    "official_decision_type": "Trukket av søker",
+                    "decision_document_title": raw_sak.get("tittel"),
+                    "decision_date": case_date
+                }
+            if ("ferdigattest" in case_title or "midlertidig brukstillatelse" in case_title) and "søknad" not in case_title and "anmodning" not in case_title:
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Ferdigattest utstedt",
+                    "decision_document_title": raw_sak.get("tittel"),
+                    "decision_date": case_date
+                }
+            if "igangsettingstillatelse" in case_title and "søknad" not in case_title:
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Innvilget / Igangsettingstillatelse gitt",
+                    "decision_document_title": raw_sak.get("tittel"),
+                    "decision_date": case_date
+                }
+            if ("rammetillatelse" in case_title or "ett-trinnstillatelse" in case_title or "tillatelse i ett trinn" in case_title or "tillatelse § 20-3" in case_title or "tillatelse § 20-4" in case_title) and "søknad" not in case_title and "anmodning" not in case_title:
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Innvilget / Tillatelse gitt",
+                    "decision_document_title": raw_sak.get("tittel"),
+                    "decision_date": case_date
+                }
+
         return {
             "has_official_decision": has_decision,
             "official_decision_type": decision_type,
