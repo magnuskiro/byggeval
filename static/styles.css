@@ -1491,6 +1491,16 @@ body {
     border: 2px solid #6ee7b7;
 }
 
+.official-decision-box.decision-warning {
+    background: #fffbeb;
+    border: 2px solid #fcd34d;
+}
+
+.official-decision-box.decision-withdrawn {
+    background: #f1f5f9;
+    border: 2px solid #94a3b8;
+}
+
 .official-decision-header {
     display: flex;
     align-items: center;
@@ -1567,6 +1577,13 @@ body {
     font-weight: 700;
 }
 
+.badge-official-warning {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+    font-weight: 700;
+}
+
 .badge-official-pending {
     background: #f1f5f9;
     color: #475569;
@@ -1579,6 +1596,13 @@ body {
     color: #991b1b;
     border: 1px solid #fecaca;
     font-weight: 700;
+}
+
+.badge-official-withdrawn {
+    background: #f1f5f9;
+    color: #64748b;
+    border: 1px solid #cbd5e1;
+    font-weight: 600;
 }
 
 /* Evaluation Scorecard */

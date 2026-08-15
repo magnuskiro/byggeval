@@ -438,7 +438,7 @@ class Database:
             cursor.execute(f"SELECT COUNT(*) FROM cases{sql_approved}", p_approved)
             approved_cases = cursor.fetchone()[0]
 
-            sql_rejected, p_rejected = add_filter("official_decision_type LIKE '%Avslått%' OR official_decision_type LIKE '%Avslag%'")
+            sql_rejected, p_rejected = add_filter("official_decision_type LIKE '%Avslått%' OR official_decision_type LIKE '%Avslag%' OR official_decision_type LIKE '%Avvist%' OR official_decision_type LIKE '%Delvis innvilget%'")
             cursor.execute(f"SELECT COUNT(*) FROM cases{sql_rejected}", p_rejected)
             rejected_cases = cursor.fetchone()[0]
 

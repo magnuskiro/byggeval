@@ -750,64 +750,108 @@ class ByggesakEvaluator:
     def extract_official_decision(raw_sak: Dict[str, Any], dokumenter: List[Dokument]) -> Dict[str, Any]:
         """
         Analyserer journalposter for å finne om det foreligger et offisielt enkeltvedtak fra Tønsberg kommune.
-        Skiller strengt mellom søkers innsendte søknader og kommunens formelle godkjenninger/avslag.
+        Skiller strengt mellom søkers innsendte søknader og kommunens formelle godkjenninger/avslag/avvisninger.
+        Sjekker fra nyeste til eldste dokument for å hente den gjeldende statusen.
         """
         has_decision = False
         decision_type = "Ikke avgjort (Under behandling)"
         decision_doc_title = None
         decision_date = None
 
-        # Prioritert leting etter offisielle vedtaksdokumenter
-        for d in dokumenter:
+        # Sjekk fra nyeste til eldste dokument for å fange opp siste formelle saksbehandlerutfall
+        for d in reversed(dokumenter):
             t = d.tittel.lower()
-            
-            # 1. Sjekk ferdigattest
+            dato = d.dato
+
+            # 1. Delvis innvilgelse / Avslag på dispensasjon
+            if ("avslag på dispensasjon" in t or "avslag dispensasjon" in t or "delvis avslag" in t or "rammetillatelse og avslag" in t or "tillatelse og avslag" in t):
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Delvis innvilget / Avslag på dispensasjon",
+                    "decision_document_title": d.tittel,
+                    "decision_date": dato
+                }
+
+            # 2. Formelt avslag på søknad
+            if ("vedtak om avslag" in t or "avslag på søknad" in t or "avslått" in t or "søknaden avslås" in t or "avslag" in t) and "varsel" not in t and "klage på avslag" not in t and not t.startswith("søknad"):
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Avslått av kommunen",
+                    "decision_document_title": d.tittel,
+                    "decision_date": dato
+                }
+
+            # 3. Formell avvisning av søknad (f.eks. ufullstendig eller manglende rettslig interesse)
+            if ("avvisning av søknad" in t or "avvising av søknad" in t or "søknaden avvises" in t or "avvist søknad" in t) and "varsel" not in t:
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Avvist av kommunen",
+                    "decision_document_title": d.tittel,
+                    "decision_date": dato
+                }
+
+            # 4. Formelt varsel om avslag / avvisning
+            if ("varsel om avslag" in t or "varsel om avvisning" in t or "varsel om mulig avslag" in t or "varsel om avvising" in t):
+                return {
+                    "has_official_decision": False,
+                    "official_decision_type": "Varsel om avslag",
+                    "decision_document_title": d.tittel,
+                    "decision_date": dato
+                }
+
+            # 5. Søknad trukket av søker (ofte etter varsel om avslag)
+            if "trukket søknad" in t or "bekrefter trukket" in t or "søknad trekkes" in t:
+                return {
+                    "has_official_decision": False,
+                    "official_decision_type": "Trukket av søker",
+                    "decision_document_title": d.tittel,
+                    "decision_date": dato
+                }
+
+            # 6. Ferdigattest / midlertidig brukstillatelse
             if ("ferdigattest" in t or "brukstillatelse" in t) and "søknad" not in t and "anmodning" not in t:
-                has_decision = True
-                decision_type = "Ferdigattest utstedt"
-                decision_doc_title = d.tittel
-                decision_date = d.dato
-                break
-                
-            # 2. Sjekk igangsettingstillatelse
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Ferdigattest utstedt",
+                    "decision_document_title": d.tittel,
+                    "decision_date": dato
+                }
+
+            # 7. Igangsettingstillatelse
             if "igangsettingstillatelse" in t and "søknad" not in t and "anmodning" not in t:
-                has_decision = True
-                decision_type = "Innvilget / Igangsettingstillatelse gitt"
-                decision_doc_title = d.tittel
-                decision_date = d.dato
-                break
-                
-            # 3. Sjekk rammetillatelse eller ett-trinnstillatelse
-            if ("rammetillatelse" in t or "ett-trinnstillatelse" in t or "tillatelse i ett trinn" in t or "tillatelse til tiltak" in t) and "søknad" not in t and "anmodning" not in t:
-                has_decision = True
-                decision_type = "Innvilget / Tillatelse gitt"
-                decision_doc_title = d.tittel
-                decision_date = d.dato
-                break
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Innvilget / Igangsettingstillatelse gitt",
+                    "decision_document_title": d.tittel,
+                    "decision_date": dato
+                }
 
-            # 4. Sjekk delegert vedtak / godkjenning
-            if ("delegert vedtak" in t or "vedtak om tillatelse" in t or "svar på søknad - godkjent" in t) and "søknad" not in t:
-                has_decision = True
-                decision_type = "Innvilget / Delegert vedtak"
-                decision_doc_title = d.tittel
-                decision_date = d.dato
-                break
+            # 8. Rammetillatelse eller ett-trinnstillatelse
+            if ("rammetillatelse" in t or "ett-trinnstillatelse" in t or "tillatelse i ett trinn" in t or "tillatelse til tiltak" in t or "tillatelse § 20-3" in t or "tillatelse § 20-4" in t) and "søknad" not in t and "anmodning" not in t:
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Innvilget / Tillatelse gitt",
+                    "decision_document_title": d.tittel,
+                    "decision_date": dato
+                }
 
-            # 5. Sjekk avslag
-            if ("vedtak om avslag" in t or "avslag på søknad" in t or "avslått" in t) and "søknad" not in t:
-                has_decision = True
-                decision_type = "Avslått av kommunen"
-                decision_doc_title = d.tittel
-                decision_date = d.dato
-                break
+            # 9. Delegert vedtak / godkjenning
+            if ("delegert vedtak" in t or "vedtak om tillatelse" in t or "svar på søknad - godkjent" in t or "godkjent søknad" in t) and "søknad" not in t:
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Innvilget / Delegert vedtak",
+                    "decision_document_title": d.tittel,
+                    "decision_date": dato
+                }
 
-            # 6. Sjekk pålegg / stans
+            # 10. Pålegg / stansingsvedtak
             if "pålegg om stans" in t or "stansingsvedtak" in t or "vedtak om pålegg" in t:
-                has_decision = True
-                decision_type = "Pålegg / Stansingsvedtak"
-                decision_doc_title = d.tittel
-                decision_date = d.dato
-                break
+                return {
+                    "has_official_decision": True,
+                    "official_decision_type": "Pålegg / Stansingsvedtak",
+                    "decision_document_title": d.tittel,
+                    "decision_date": dato
+                }
 
         return {
             "has_official_decision": has_decision,

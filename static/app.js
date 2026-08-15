@@ -253,12 +253,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function getOfficialDecisionBadge(c) {
         if (!c) return '';
-        if (c.has_official_decision) {
-            const dtype = c.official_decision_type || 'Innvilget vedtak';
-            const docInfo = c.decision_document_title ? `Vedtaksdokument: "${c.decision_document_title}" (${c.decision_date || c.dato})` : '';
+        const dtype = c.official_decision_type || 'Ikke avgjort';
+        const docInfo = c.decision_document_title ? `Journalført dokument: "${c.decision_document_title}" (${c.decision_date || c.dato})` : '';
 
-            if (dtype.includes('Avslått') || dtype.includes('Avslag')) {
-                return `<span class="badge badge-official-rejected" title="${escapeHtml(docInfo)}"><i class="ri-close-circle-fill"></i> Offisielt vedtak: ${escapeHtml(dtype)}</span>`;
+        if (c.has_official_decision) {
+            if (dtype.includes('Avslått') || dtype.includes('Avslag') || dtype.includes('Avvist')) {
+                return `<span class="badge badge-official-rejected" title="${escapeHtml(docInfo)}"><i class="ri-close-circle-fill"></i> ${escapeHtml(dtype)}</span>`;
+            }
+            if (dtype.includes('Delvis')) {
+                return `<span class="badge badge-official-warning" title="${escapeHtml(docInfo)}"><i class="ri-alert-fill"></i> ${escapeHtml(dtype)}</span>`;
             }
             if (dtype.includes('Ferdigattest')) {
                 return `<span class="badge badge-official-approved" title="${escapeHtml(docInfo)}"><i class="ri-award-fill"></i> Offisielt vedtak: Ferdigattest</span>`;
@@ -267,6 +270,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 return `<span class="badge badge-official-approved" title="${escapeHtml(docInfo)}"><i class="ri-hammer-fill"></i> Offisielt vedtak: Igangsetting gitt</span>`;
             }
             return `<span class="badge badge-official-approved" title="${escapeHtml(docInfo)}"><i class="ri-checkbox-circle-fill"></i> Offisielt vedtak: ${escapeHtml(dtype)}</span>`;
+        }
+
+        if (dtype === 'Varsel om avslag') {
+            return `<span class="badge badge-official-warning" title="${escapeHtml(docInfo)}"><i class="ri-alarm-warning-fill"></i> Varsel om avslag</span>`;
+        }
+        if (dtype === 'Trukket av søker') {
+            return `<span class="badge badge-official-withdrawn" title="${escapeHtml(docInfo)}"><i class="ri-arrow-go-back-line"></i> Trukket av søker</span>`;
         }
 
         return `<span class="badge badge-official-pending" title="Ingen formelt vedtaksdokument registrert ennå"><i class="ri-loader-2-line"></i> Kommune: ${escapeHtml(c.official_status || 'Under behandling')}</span>`;
@@ -534,16 +544,23 @@ document.addEventListener("DOMContentLoaded", () => {
     function getOfficialDecisionDrawerCard(c) {
         let decisionBoxClass = 'decision-pending';
         let decisionIcon = 'ri-time-line';
-        if (c.has_official_decision) {
-            const dtype = c.official_decision_type || '';
-            if (dtype.includes('Avslått') || dtype.includes('Avslag')) {
-                decisionBoxClass = 'decision-rejected';
-                decisionIcon = 'ri-close-circle-fill';
-            } else {
-                decisionBoxClass = 'decision-permit';
-                decisionIcon = 'ri-checkbox-circle-fill';
-            }
+        const dtype = c.official_decision_type || '';
+
+        if (dtype.includes('Avslått') || dtype.includes('Avslag') || dtype.includes('Avvist')) {
+            decisionBoxClass = 'decision-rejected';
+            decisionIcon = 'ri-close-circle-fill';
+        } else if (dtype.includes('Varsel om avslag') || dtype.includes('Delvis')) {
+            decisionBoxClass = 'decision-warning';
+            decisionIcon = 'ri-error-warning-fill';
+        } else if (dtype.includes('Trukket')) {
+            decisionBoxClass = 'decision-withdrawn';
+            decisionIcon = 'ri-arrow-go-back-line';
+        } else if (c.has_official_decision) {
+            decisionBoxClass = 'decision-permit';
+            decisionIcon = 'ri-checkbox-circle-fill';
         }
+
+        const isFormalOrWarning = c.has_official_decision || dtype === 'Varsel om avslag' || dtype === 'Trukket av søker';
 
         return `
             <div class="official-decision-box ${decisionBoxClass}">
@@ -554,10 +571,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 <div class="official-decision-title">
                     <i class="${decisionIcon}"></i>
-                    <span>${c.has_official_decision ? escapeHtml(c.official_decision_type) : 'Ingen formelt vedtak fattet ennå (Under saksbehandling)'}</span>
+                    <span>${isFormalOrWarning ? escapeHtml(dtype) : 'Ingen formelt vedtak fattet ennå (Under saksbehandling)'}</span>
                 </div>
 
-                ${c.has_official_decision && c.decision_document_title ? `
+                ${c.decision_document_title ? `
                     <div class="official-doc-item">
                         <div><strong><i class="ri-file-shield-2-line"></i> Journalført vedtaksdokument fra kommunen:</strong></div>
                         <div style="font-weight: 600; margin: 2px 0;">${escapeHtml(c.decision_document_title)}</div>
