@@ -25,6 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
         activeTab: "explorer", // 'explorer' | 'map' | 'analytics'
         map: null,
         markersLayer: null,
+        allMapPoints: [],
         charts: {},
         syncInterval: null
     };
@@ -98,7 +99,8 @@ document.addEventListener("DOMContentLoaded", () => {
         syncProgressBox: document.getElementById("syncProgressBox"),
         syncProgressText: document.getElementById("syncProgressText"),
 
-        // Map stats
+        // Map stats & search
+        mapSearchInput: document.getElementById("mapSearchInput"),
         mapStatsBox: document.getElementById("mapStatsBox")
     };
 
@@ -967,19 +969,48 @@ document.addEventListener("DOMContentLoaded", () => {
 
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> bidragsytere',
-            maxZoom: 18
+            maxZoom: 19
         }).addTo(state.map);
 
-        state.markersLayer = L.layerGroup().addTo(state.map);
+        if (typeof L.markerClusterGroup === "function") {
+            state.markersLayer = L.markerClusterGroup({
+                chunkedLoading: true,
+                maxClusterRadius: 40,
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: false,
+                zoomToBoundsOnClick: true
+            }).addTo(state.map);
+        } else {
+            state.markersLayer = L.layerGroup().addTo(state.map);
+        }
     }
 
-    function renderMap(points) {
+    function renderMap(points, filterText = "") {
         initMap();
+        state.allMapPoints = points || state.allMapPoints || [];
+
+        let filtered = state.allMapPoints;
+        if (filterText && filterText.trim()) {
+            const q = filterText.trim().toLowerCase();
+            filtered = state.allMapPoints.filter(p => 
+                (p.tittel && p.tittel.toLowerCase().includes(q)) ||
+                (p.saksnummer && p.saksnummer.toLowerCase().includes(q)) ||
+                (p.street_name && p.street_name.toLowerCase().includes(q)) ||
+                (p.primary_company && p.primary_company.toLowerCase().includes(q)) ||
+                (p.category && p.category.toLowerCase().includes(q))
+            );
+        }
+
         state.markersLayer.clearLayers();
 
-        elements.mapStatsBox.innerHTML = `<strong>${points.length} byggesaker</strong> plassert i Tønsberg kommune.`;
+        if (filterText) {
+            elements.mapStatsBox.innerHTML = `Viser <strong>${filtered.length} av ${state.allMapPoints.length}</strong> byggesaker for søket "<em>${escapeHtml(filterText)}</em>".`;
+        } else {
+            elements.mapStatsBox.innerHTML = `<strong>${filtered.length} byggesaker</strong> plassert i Tønsberg kommune.`;
+        }
 
-        points.forEach(p => {
+        const markers = [];
+        filtered.forEach(p => {
             const color = getPinColor(p.risk_level);
             const iconHtml = `<div class="custom-map-pin" style="background-color: ${color};"><i class="ri-building-line"></i></div>`;
             
@@ -994,28 +1025,44 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const stageInfo = getStageInfo(p.stage);
             const companyHtml = p.primary_company ? `<div style="font-size: 11px; color: #4338ca; font-weight: 600; margin-bottom: 4px;"><i class="ri-briefcase-line"></i> ${escapeHtml(p.primary_company)}</div>` : '';
+            const addressText = p.street_name ? `${p.street_name} ${p.house_number || ''}`.trim() : 'Tønsberg';
 
             const popupHtml = `
-                <div style="font-family: var(--font-sans); min-width: 220px;">
+                <div style="font-family: var(--font-sans); min-width: 230px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                         <span style="font-size: 11px; font-weight: 700; color: #64748b;">${p.saksnummer}</span>
                         <span class="status-pill status-${stageInfo.slug}" style="font-size: 10px; padding: 2px 6px;"><span class="status-dot"></span>${escapeHtml(stageInfo.label)}</span>
                     </div>
-                    <h4 style="font-size: 14px; font-weight: 700; color: #0f2b48; margin: 4px 0 6px 0;">${escapeHtml(p.tittel)}</h4>
+                    <h4 style="font-size: 14px; font-weight: 700; color: #0f2b48; margin: 4px 0 4px 0; line-height: 1.25;">${escapeHtml(p.tittel)}</h4>
+                    <div style="font-size: 12px; color: #1e293b; font-weight: 600; margin-bottom: 4px;">
+                        <i class="ri-map-pin-2-fill" style="color: var(--accent);"></i> ${escapeHtml(addressText)}
+                    </div>
                     ${companyHtml}
-                    <div style="font-size: 12px; color: #475569; margin-bottom: 8px;">
-                        <strong>Kategori:</strong> ${p.category}<br>
-                        <strong>Byggeval Risiko:</strong> ${p.risk_level} (${p.risk_score}/100)
+                    <div style="font-size: 12px; color: #475569; margin-bottom: 8px; line-height: 1.4;">
+                        <strong>Kategori:</strong> ${p.category || 'Byggesak'}<br>
+                        <strong>Risikovurdering:</strong> ${p.risk_level} (${p.risk_score}/100)
                     </div>
                     <button class="btn btn-primary btn-sm btn-map-popup" data-id="${p.identifikator}" style="width: 100%;">
-                        Åpne sak
+                        Vis full sak & vedtak
                     </button>
                 </div>
             `;
 
             marker.bindPopup(popupHtml);
-            state.markersLayer.addLayer(marker);
+            markers.push(marker);
         });
+
+        if (typeof state.markersLayer.addLayers === "function") {
+            state.markersLayer.addLayers(markers);
+        } else {
+            markers.forEach(m => state.markersLayer.addLayer(m));
+        }
+
+        // Zoom inn på filtrerte treff dersom søkt
+        if (filterText && filtered.length > 0) {
+            const group = L.featureGroup(markers);
+            state.map.fitBounds(group.getBounds().pad(0.2), { maxZoom: 16 });
+        }
 
         // Event delegation for popup buttons
         state.map.on("popupopen", () => {
@@ -1287,6 +1334,17 @@ document.addEventListener("DOMContentLoaded", () => {
         state.selectedSort = e.target.value;
         fetchCases();
     });
+
+    // Map Search / Filter
+    if (elements.mapSearchInput) {
+        let mapSearchTimeout = null;
+        elements.mapSearchInput.addEventListener("input", (e) => {
+            clearTimeout(mapSearchTimeout);
+            mapSearchTimeout = setTimeout(() => {
+                renderMap(state.allMapPoints, e.target.value);
+            }, 250);
+        });
+    }
 
     // Analytics Company Filter
     if (elements.analyticsCompanyFilter) {
