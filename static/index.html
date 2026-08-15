@@ -200,6 +200,18 @@
                     </div>
 
                     <div class="filter-group">
+                        <label for="intakeFilter"><i class="ri-survey-line"></i> Mottakskontroll (1–2 mnd)</label>
+                        <select id="intakeFilter" class="custom-select">
+                            <option value="all">Alle saker</option>
+                            <option value="recent_all">⚡ Nye saker (0–60 dager)</option>
+                            <option value="recent_pending">⏳ Avventer sjekk (Innen 3 uker)</option>
+                            <option value="recent_complete">🟢 Komplett søknad</option>
+                            <option value="recent_missing">🔴 Mangelbrev utstedt</option>
+                            <option value="recent_late">⚠️ Forsinket mottakskontroll</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
                         <label for="riskFilter"><i class="ri-shield-line"></i> Risiko</label>
                         <select id="riskFilter" class="custom-select">
                             <option value="all">Alle risikonivåer</option>

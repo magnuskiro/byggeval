@@ -91,6 +91,14 @@ class EvaluationResult(BaseModel):
     fee_reduction_percentage: int = 0  # 0, 25, 50, 75, 100 %
     statutory_consequence_note: Optional[str] = None  # Juridisk forklaring på hva som skjedde og konsekvenser
     
+    # Mottakskontroll og kompletthetsvurdering for nyere saker (0-60 dager / 1-2 mnd)
+    is_recent_case: bool = False  # Innsendt siste 60 dager
+    intake_status: str = "Ikke vurdert"  # "Komplett søknad", "Mangelbrev utstedt", "Avventer mottakskontroll", "Forsinket mottakskontroll", "Ferdigbehandlet"
+    intake_status_label: Optional[str] = None
+    intake_deficiency_details: List[str] = Field(default_factory=list)
+    intake_days_since_submission: Optional[int] = None
+    intake_statutory_window_status: str = "OK"  # "Innenfor 3 uker", "Mangelbrev innen 3 uker", "Forsinket mangelbrev", "3-ukersfrist utløpt uten mangelbrev"
+    
     # Tydelig merking av evaluert analyse
     is_automated_analysis: bool = True
     analysis_disclaimer: str = "Automatisert analyse og faglig veiledning fra Byggeval. Erstattet ikke kommunens formelle enkeltvedtak."
@@ -120,6 +128,11 @@ class Byggesak(BaseModel):
     is_deadline_paused: bool = False  # Frist stanset pga mangelbrev
     is_late_deficiency_notice: bool = False  # Forsinket mangelbrev fra kommunen
     fee_reduction_percentage: int = 0  # Krav på gebyrreduksjon (0 - 100 %)
+    
+    # Mottakskontroll
+    is_recent_case: bool = False
+    intake_status: str = "Ikke vurdert"
+    intake_days_since_submission: Optional[int] = None
     
     # Utførende / foretak / søker
     primary_company: Optional[str] = None  # Hovedansvarlig firma / søker

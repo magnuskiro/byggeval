@@ -113,6 +113,7 @@ def get_cases(
     stage: Optional[str] = Query(None, description="Saksstadium"),
     company: Optional[str] = Query(None, description="Firma / utførende foretak / søker"),
     deadline_status: Optional[str] = Query(None, description="Friststatus: God tid, Nærmer seg frist, Fristoverskridelse, Vedtatt / Avsluttet"),
+    intake_filter: Optional[str] = Query(None, description="Mottakskontroll: recent_all, recent_complete, recent_missing, recent_pending, recent_late"),
     sort_by: str = Query("dato_desc", description="Sortering: dato_desc, dato_asc, deadline_asc, risk_desc, complexity_desc, saksnummer_desc, company_asc"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0)
@@ -125,6 +126,7 @@ def get_cases(
         stage=stage,
         company=company,
         deadline_status=deadline_status,
+        intake_filter=intake_filter,
         sort_by=sort_by,
         limit=limit,
         offset=offset

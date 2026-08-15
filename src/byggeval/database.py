@@ -56,6 +56,11 @@ class Database:
                     decision_document_title TEXT,
                     decision_date TEXT,
                     
+                    -- Mottakskontroll og kompletthet
+                    is_recent_case INTEGER DEFAULT 0,
+                    intake_status TEXT,
+                    intake_days_since_submission INTEGER,
+                    
                     -- Ekstraherte adressefelt
                     street_name TEXT,
                     house_number TEXT,
@@ -118,6 +123,18 @@ class Database:
                 cursor.execute("ALTER TABLE cases ADD COLUMN decision_date TEXT")
             except sqlite3.OperationalError:
                 pass
+            try:
+                cursor.execute("ALTER TABLE cases ADD COLUMN is_recent_case INTEGER DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                cursor.execute("ALTER TABLE cases ADD COLUMN intake_status TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                cursor.execute("ALTER TABLE cases ADD COLUMN intake_days_since_submission INTEGER")
+            except sqlite3.OperationalError:
+                pass
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS sync_history (
@@ -137,6 +154,7 @@ class Database:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_company ON cases(primary_company)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_days_remaining ON cases(days_remaining)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_decision ON cases(has_official_decision, official_decision_type)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_intake ON cases(is_recent_case, intake_status)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_gnr_bnr ON cases(gnr, bnr)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cases_stage ON cases(stage)")
             conn.commit()
@@ -164,6 +182,10 @@ class Database:
         stage = eval_res.stage if eval_res else "Under saksbehandling"
         days_remaining = eval_res.days_remaining if eval_res else None
         deadline_status = eval_res.deadline_status if eval_res else "God tid"
+        
+        is_recent_case = 1 if (case.is_recent_case or (eval_res and eval_res.is_recent_case)) else 0
+        intake_status = case.intake_status or (eval_res.intake_status if eval_res else "Ikke vurdert")
+        intake_days = case.intake_days_since_submission if case.intake_days_since_submission is not None else (eval_res.intake_days_since_submission if eval_res else None)
 
         companies_str = " | ".join(case.companies) if case.companies else ""
 
@@ -175,11 +197,12 @@ class Database:
                     dato, saksbehandler, status_tittel, er_ferdig, innsyn_url,
                     primary_company, companies_text, days_remaining, deadline_status,
                     has_official_decision, official_decision_type, decision_document_title, decision_date,
+                    is_recent_case, intake_status, intake_days_since_submission,
                     street_name, house_number, gnr, bnr, matrikkel, latitude, longitude,
                     category, subcategory, complexity, complexity_score, risk_level, risk_score, stage,
                     address_json, evaluation_json, dokumenter_json, raw_json,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(identifikator) DO UPDATE SET
                     saksnummer=excluded.saksnummer,
                     tittel=excluded.tittel,
@@ -199,6 +222,9 @@ class Database:
                     official_decision_type=excluded.official_decision_type,
                     decision_document_title=excluded.decision_document_title,
                     decision_date=excluded.decision_date,
+                    is_recent_case=excluded.is_recent_case,
+                    intake_status=excluded.intake_status,
+                    intake_days_since_submission=excluded.intake_days_since_submission,
                     street_name=excluded.street_name,
                     house_number=excluded.house_number,
                     gnr=excluded.gnr,
@@ -237,6 +263,9 @@ class Database:
                 case.official_decision_type,
                 case.decision_document_title,
                 case.decision_date,
+                is_recent_case,
+                intake_status,
+                intake_days,
                 case.address_info.street_name,
                 case.address_info.house_number,
                 case.address_info.gnr,
@@ -294,6 +323,7 @@ class Database:
         stage: Optional[str] = None,
         company: Optional[str] = None,
         deadline_status: Optional[str] = None,
+        intake_filter: Optional[str] = None,
         sort_by: str = "dato_desc",
         limit: int = 50,
         offset: int = 0
@@ -327,6 +357,19 @@ class Database:
         if deadline_status and deadline_status != "all":
             where_clauses.append("deadline_status = ?")
             params.append(deadline_status)
+
+        # Mottakskontroll-filtre (nyere saker 1-2 mnd)
+        if intake_filter and intake_filter != "all":
+            if intake_filter == "recent_all":
+                where_clauses.append("is_recent_case = 1")
+            elif intake_filter == "recent_complete":
+                where_clauses.append("is_recent_case = 1 AND (intake_status LIKE '%Komplett%' OR stage IN ('Ferdigbehandlet', 'Vedtatt / Tillatelse gitt'))")
+            elif intake_filter == "recent_missing":
+                where_clauses.append("is_recent_case = 1 AND (intake_status LIKE '%Mangelbrev%' OR intake_status LIKE '%Forsinket%' OR deadline_status = 'Frist stanset (Mangelbrev)')")
+            elif intake_filter == "recent_pending":
+                where_clauses.append("is_recent_case = 1 AND intake_status LIKE '%Avventer%'")
+            elif intake_filter == "recent_late":
+                where_clauses.append("is_recent_case = 1 AND (intake_status LIKE '%Forsinket%' OR evaluation_json LIKE '%\"is_late_deficiency_notice\": true%' OR evaluation_json LIKE '%\"fee_reduction_entitled\": true%')")
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
@@ -385,7 +428,7 @@ class Database:
             cursor.execute("""
                 SELECT identifikator, saksnummer, tittel, dato, street_name, house_number, matrikkel,
                        primary_company, latitude, longitude, category, subcategory, risk_level, risk_score, stage,
-                       days_remaining, deadline_status
+                       days_remaining, deadline_status, is_recent_case, intake_status
                 FROM cases
                 WHERE latitude IS NOT NULL AND longitude IS NOT NULL
                 ORDER BY substr(dato, 7, 4) || substr(dato, 4, 2) || substr(dato, 1, 2) DESC
@@ -395,7 +438,7 @@ class Database:
             return [dict(row) for row in rows]
 
     def get_statistics(self, company: Optional[str] = None) -> Dict[str, Any]:
-        """Genererer helhetlig statistikk og analyse for dashboardet, med støtte for foretaksfiltrering."""
+        """Beregner aggregerte nøkkeltall og statistikk for dashboard og analyse."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
@@ -444,6 +487,27 @@ class Database:
 
             decided_total = approved_cases + rejected_cases
             approval_rate = round((approved_cases / decided_total * 100), 1) if decided_total > 0 else None
+
+            # Mottakskontroll-statistikk (Nye saker 1-2 mnd)
+            sql_recent, p_recent = add_filter("is_recent_case = 1")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{sql_recent}", p_recent)
+            recent_total = cursor.fetchone()[0]
+
+            sql_rc_comp, p_rc_comp = add_filter("is_recent_case = 1 AND (intake_status LIKE '%Komplett%' OR stage IN ('Ferdigbehandlet', 'Vedtatt / Tillatelse gitt'))")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{sql_rc_comp}", p_rc_comp)
+            recent_complete = cursor.fetchone()[0]
+
+            sql_rc_miss, p_rc_miss = add_filter("is_recent_case = 1 AND (intake_status LIKE '%Mangelbrev%' OR intake_status LIKE '%Forsinket%' OR deadline_status = 'Frist stanset (Mangelbrev)')")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{sql_rc_miss}", p_rc_miss)
+            recent_deficiency = cursor.fetchone()[0]
+
+            sql_rc_pend, p_rc_pend = add_filter("is_recent_case = 1 AND intake_status LIKE '%Avventer%'")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{sql_rc_pend}", p_rc_pend)
+            recent_pending = cursor.fetchone()[0]
+
+            sql_rc_late, p_rc_late = add_filter("is_recent_case = 1 AND (intake_status LIKE '%Forsinket%' OR evaluation_json LIKE '%\"is_late_deficiency_notice\": true%' OR evaluation_json LIKE '%\"fee_reduction_entitled\": true%')")
+            cursor.execute(f"SELECT COUNT(*) FROM cases{sql_rc_late}", p_rc_late)
+            recent_late = cursor.fetchone()[0]
 
             # Fristfordeling
             sql_dl, p_dl = add_filter("deadline_status IS NOT NULL")
@@ -513,6 +577,11 @@ class Database:
                 "approved_cases": approved_cases,
                 "rejected_cases": rejected_cases,
                 "approval_rate": approval_rate,
+                "recent_total": recent_total,
+                "recent_complete": recent_complete,
+                "recent_deficiency": recent_deficiency,
+                "recent_pending": recent_pending,
+                "recent_late": recent_late,
                 "deadline_breakdown": deadline_breakdown,
                 "category_breakdown": category_breakdown,
                 "risk_breakdown": risk_breakdown,
@@ -551,6 +620,10 @@ class Database:
 
         evaluation_obj = EvaluationResult(**eval_dict) if eval_dict else None
 
+        is_recent_case = bool(row["is_recent_case"]) if ("is_recent_case" in keys and row["is_recent_case"] is not None) else (evaluation_obj.is_recent_case if evaluation_obj else False)
+        intake_status = row["intake_status"] if ("intake_status" in keys and row["intake_status"]) else (evaluation_obj.intake_status if evaluation_obj else "Ikke vurdert")
+        intake_days_since_submission = row["intake_days_since_submission"] if ("intake_days_since_submission" in keys and row["intake_days_since_submission"] is not None) else (evaluation_obj.intake_days_since_submission if evaluation_obj else None)
+
         return Byggesak(
             identifikator=row["identifikator"],
             saksnummer=row["saksnummer"],
@@ -572,6 +645,9 @@ class Database:
             is_deadline_paused=evaluation_obj.is_deadline_paused if evaluation_obj else False,
             is_late_deficiency_notice=evaluation_obj.is_late_deficiency_notice if evaluation_obj else False,
             fee_reduction_percentage=evaluation_obj.fee_reduction_percentage if evaluation_obj else 0,
+            is_recent_case=is_recent_case,
+            intake_status=intake_status,
+            intake_days_since_submission=intake_days_since_submission,
             primary_company=primary_company,
             companies=companies_list,
             address_info=AddressInfo(**address_dict),

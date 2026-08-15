@@ -808,6 +808,94 @@ body {
     font-size: 11px;
 }
 
+/* Mottakskontroll Badges */
+.badge-intake-complete {
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.badge-intake-pending {
+    background: #eff6ff;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+}
+
+.badge-intake-missing {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+.badge-intake-late {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
+/* Mottakskontroll Drawer Box */
+.drawer-intake-box {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-sm);
+}
+
+.drawer-intake-box.intake-box-complete {
+    border-left: 4px solid #10b981;
+}
+
+.drawer-intake-box.intake-box-pending {
+    border-left: 4px solid #3b82f6;
+}
+
+.drawer-intake-box.intake-box-missing {
+    border-left: 4px solid #ef4444;
+}
+
+.drawer-intake-box.intake-box-late {
+    border-left: 4px solid #f59e0b;
+}
+
+.intake-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.intake-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.intake-stat-card {
+    background: #f8fafc;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    text-align: center;
+}
+
+.intake-stat-value {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--primary);
+    display: block;
+    margin-bottom: 2px;
+}
+
+.intake-stat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
 /* Status Ribbon on Card */
 .case-status-banner {
     display: flex;

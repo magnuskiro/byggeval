@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedCompany: "all",
         selectedStage: "all",
         selectedDeadline: "all",
+        selectedIntake: "all",
         selectedRisk: "all",
         selectedSort: "dato_desc",
         analyticsCompany: "all",
@@ -45,6 +46,7 @@ document.addEventListener("DOMContentLoaded", () => {
         companyFilter: document.getElementById("companyFilter"),
         stageFilter: document.getElementById("stageFilter"),
         deadlineFilter: document.getElementById("deadlineFilter"),
+        intakeFilter: document.getElementById("intakeFilter"),
         riskFilter: document.getElementById("riskFilter"),
         sortFilter: document.getElementById("sortFilter"),
 
@@ -216,6 +218,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (state.selectedCompany !== "all") params.append("company", state.selectedCompany);
             if (state.selectedStage !== "all") params.append("stage", state.selectedStage);
             if (state.selectedDeadline !== "all") params.append("deadline_status", state.selectedDeadline);
+            if (state.selectedIntake !== "all") params.append("intake_filter", state.selectedIntake);
             if (state.selectedRisk !== "all") params.append("risk_level", state.selectedRisk);
 
             const res = await fetch(`/api/cases?${params.toString()}`);
@@ -280,6 +283,106 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         return `<span class="badge badge-official-pending" title="Ingen formelt vedtaksdokument registrert ennå"><i class="ri-loader-2-line"></i> Kommune: ${escapeHtml(c.official_status || 'Under behandling')}</span>`;
+    }
+
+    function getIntakeBadge(c) {
+        if (!c) return '';
+        const ev = c.evaluation || {};
+        const isRecent = c.is_recent_case || ev.is_recent_case;
+        if (!isRecent) return '';
+
+        const status = c.intake_status || ev.intake_status || "Ikke vurdert";
+        const days = c.intake_days_since_submission ?? ev.intake_days_since_submission;
+
+        if (status.includes("Komplett")) {
+            return `<span class="badge badge-intake-complete" title="Mottakskontroll: Komplett søknad (Mottakskontroll passert uten mangelbrev)"><i class="ri-checkbox-circle-fill"></i> Mottak: Komplett</span>`;
+        }
+        if (status.includes("Mangelbrev") || status.includes("Forsinket")) {
+            return `<span class="badge badge-intake-missing" title="Mottakskontroll: Mangelbrev utstedt av kommunen (Frist stanset)"><i class="ri-error-warning-fill"></i> Mottak: Mangelbrev</span>`;
+        }
+        if (status.includes("Avventer")) {
+            const daysLeft = days !== undefined && days !== null ? Math.max(0, 21 - days) : 21;
+            return `<span class="badge badge-intake-pending" title="Mottakskontroll: Avventer kommunens sjekk innen 3 uker (${daysLeft} dager igjen)"><i class="ri-time-line"></i> Mottak: Avventer (${daysLeft}d)</span>`;
+        }
+        if (status.includes("Ferdigbehandlet")) {
+            return `<span class="badge badge-intake-complete" title="Mottakskontroll: Ferdigbehandlet av kommunen"><i class="ri-check-double-line"></i> Mottak: Ferdigbehandlet</span>`;
+        }
+        return `<span class="badge badge-intake-pending" title="Nylig mottatt søknad"><i class="ri-survey-line"></i> Mottak: Ny sak</span>`;
+    }
+
+    function getIntakeControlDrawerCard(c) {
+        const ev = c.evaluation || {};
+        const isRecent = c.is_recent_case || ev.is_recent_case;
+        if (!isRecent) return '';
+
+        const status = c.intake_status || ev.intake_status || "Ikke vurdert";
+        const days = c.intake_days_since_submission ?? ev.intake_days_since_submission ?? 0;
+        const windowStatus = ev.intake_statutory_window_status || (days <= 21 ? `Innenfor 3 uker (${days}/21 dager)` : "3-ukersfrist passert");
+
+        let boxClass = 'intake-box-complete';
+        let icon = 'ri-checkbox-circle-fill';
+        let title = 'Mottakskontroll: Søknaden er komplett';
+        let desc = 'Søknaden inneholder alle nødvendige opplysninger for saksbehandling. Lovpålagt saksbehandlingsfrist løper uavbrutt fra mottaksdato.';
+
+        if (status.includes('Mangelbrev')) {
+            boxClass = 'intake-box-missing';
+            icon = 'ri-error-warning-fill';
+            title = 'Mottakskontroll: Mangelbrev utstedt (Frist stanset)';
+            desc = 'Kommunen har identifisert mangler i søknadsunderlaget og stanset saksbehandlingsfristen i henhold til SAK10 § 7-2 frem til supplering mottas.';
+        } else if (status.includes('Forsinket')) {
+            boxClass = 'intake-box-late';
+            icon = 'ri-alarm-warning-fill';
+            title = 'Mottakskontroll: Forsinket mangelbrev fra kommunen';
+            desc = 'Kommunen har brukt mer enn lovpålagt 3-ukersfrist på å utføre mottakskontroll. Dette utløser lovkrav på gebyravkorting etter pbl § 21-7.';
+        } else if (status.includes('Avventer')) {
+            boxClass = 'intake-box-pending';
+            icon = 'ri-time-line';
+            title = 'Mottakskontroll: Avventer kommunens 3-ukers mottakskontroll';
+            desc = `Søknaden ble mottatt for ${days} dager siden. Kommunen har etter SAK10 § 7-1 inntil 3 uker (${Math.max(0, 21 - days)} dager igjen) på å kontrollere om søknaden er komplett.`;
+        } else if (status.includes('Ferdigbehandlet')) {
+            boxClass = 'intake-box-complete';
+            icon = 'ri-check-double-line';
+            title = 'Mottakskontroll: Fullført / Saken er avgjort';
+            desc = 'Saken er ferdig behandlet av Tønsberg kommune med formelt vedtak.';
+        }
+
+        return `
+            <div class="drawer-intake-box ${boxClass}">
+                <div class="intake-header-row">
+                    <strong style="font-size: 14px; color: var(--primary); display: flex; align-items: center; gap: 6px;">
+                        <i class="${icon}"></i>
+                        <span>Kommunal Mottakskontroll (SAK10 § 7-1 / PBL § 21-7)</span>
+                    </strong>
+                    ${getIntakeBadge(c)}
+                </div>
+
+                <div class="intake-stats-grid">
+                    <div class="intake-stat-card">
+                        <span class="intake-stat-value">${c.dato || '–'}</span>
+                        <span class="intake-stat-label">Mottatt dato</span>
+                    </div>
+                    <div class="intake-stat-card">
+                        <span class="intake-stat-value">${days} dager</span>
+                        <span class="intake-stat-label">Saksalder</span>
+                    </div>
+                    <div class="intake-stat-card">
+                        <span class="intake-stat-value">3 uker</span>
+                        <span class="intake-stat-label">Mottaksvindu (§ 7-1)</span>
+                    </div>
+                    <div class="intake-stat-card">
+                        <span class="intake-stat-value" style="font-size: 13px;">${escapeHtml(status)}</span>
+                        <span class="intake-stat-label">Status</span>
+                    </div>
+                </div>
+
+                <p style="font-size: 12px; color: var(--text-muted); line-height: 1.4; margin: 0;">
+                    ${escapeHtml(desc)}
+                </p>
+                <div style="font-size: 11px; color: #64748b; margin-top: 6px;">
+                    <strong>Fristforløp ved mottak:</strong> ${escapeHtml(windowStatus)}
+                </div>
+            </div>
+        `;
     }
 
     function getStageInfo(stageRaw) {
@@ -463,6 +566,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                     <div class="badges-row">
                         ${officialBadgeHtml}
+                        ${getIntakeBadge(c)}
                         <span class="badge ${riskClass}" title="Byggeval automatisert risikovurdering"><i class="ri-sparkling-fill"></i> ${ev.risk_level || 'Ukjent'} risiko</span>
                         ${deadlineBadgeHtml}
                         <span class="badge badge-category">${ev.category || 'Byggesak'}</span>
@@ -484,12 +588,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const riskClass = getRiskBadgeClass(ev.risk_level);
         const officialBadgeHtml = getOfficialDecisionBadge(c);
         const deadlineBadgeHtml = getDeadlineBadge(ev);
+        const intakeBadgeHtml = getIntakeBadge(c);
         const street = addr.street_name ? `${addr.street_name} ${addr.house_number || ''}`.trim() : '–';
 
         return `
             <tr>
                 <td><strong>${c.saksnummer}</strong></td>
-                <td>${officialBadgeHtml}</td>
+                <td>${officialBadgeHtml} ${intakeBadgeHtml}</td>
                 <td>${deadlineBadgeHtml}</td>
                 <td>${c.dato}</td>
                 <td>${escapeHtml(street)} ${addr.matrikkel ? `(Gnr ${addr.matrikkel})` : ''}</td>
@@ -669,6 +774,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
             <!-- SEKSJON 1: KOMMUNENS OFFISIELLE ENKELTVEDTAK -->
             ${getOfficialDecisionDrawerCard(c)}
+
+            <!-- SEKSJON 1.5: MOTTAKSRAPPORT OG KOMPLETTHETSKONTROLL (SAK10 § 7-1) -->
+            ${getIntakeControlDrawerCard(c)}
 
             <!-- SEKSJON 2: LOVPÅLAGT SAKSBEHANDLINGSFRIST & FORSINKEDE MANGELBREV -->
             <div class="drawer-deadline-box">
@@ -1156,6 +1264,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (elements.deadlineFilter) {
         elements.deadlineFilter.addEventListener("change", (e) => {
             state.selectedDeadline = e.target.value;
+            state.currentPage = 1;
+            fetchCases();
+        });
+    }
+
+    if (elements.intakeFilter) {
+        elements.intakeFilter.addEventListener("change", (e) => {
+            state.selectedIntake = e.target.value;
             state.currentPage = 1;
             fetchCases();
         });

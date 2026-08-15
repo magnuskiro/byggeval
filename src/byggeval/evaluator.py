@@ -229,6 +229,9 @@ class ByggesakEvaluator:
         # Beregn dager i prosess fra komplett søknad
         days_in_process = deadline_info.get("days_in_process") or cls._calculate_days_in_process(sak_data.get("dato"))
 
+        # Vurder mottakskontroll og kompletthet etter SAK10 § 7-1 (for nyere saker 0-75 dager)
+        intake_info = cls._evaluate_intake_control(sak_data, deadline_info, stage)
+
         # Generer norsk sammendrag og anbefaling
         summary = cls._generate_summary(title, category, subcategory, risk_level, risk_factors, stage)
         recommendation = cls._generate_recommendation(category, risk_factors, stage)
@@ -263,7 +266,13 @@ class ByggesakEvaluator:
             is_late_deficiency_notice=deadline_info.get("is_late_deficiency_notice", False),
             fee_reduction_entitled=deadline_info.get("fee_reduction_entitled", False),
             fee_reduction_percentage=deadline_info.get("fee_reduction_percentage", 0),
-            statutory_consequence_note=deadline_info.get("statutory_consequence_note")
+            statutory_consequence_note=deadline_info.get("statutory_consequence_note"),
+            is_recent_case=intake_info["is_recent_case"],
+            intake_status=intake_info["intake_status"],
+            intake_status_label=intake_info["intake_status_label"],
+            intake_deficiency_details=intake_info["intake_deficiency_details"],
+            intake_days_since_submission=intake_info["intake_days_since_submission"],
+            intake_statutory_window_status=intake_info["intake_statutory_window_status"]
         )
 
     @classmethod
@@ -338,7 +347,7 @@ class ByggesakEvaluator:
             except Exception:
                 pass
 
-        docs = sak_data.get("dokumenter", [])
+        docs = sak_data.get("dokumenter") or sak_data.get("journalposter") or []
         latest_supplement_dt = None
         latest_supplement_str = None
         latest_mangelbrev_dt = None
@@ -582,6 +591,96 @@ class ByggesakEvaluator:
             return max(0, delta.days)
         except Exception:
             return None
+
+    @classmethod
+    def _evaluate_intake_control(
+        cls,
+        sak_data: Dict[str, Any],
+        deadline_info: Dict[str, Any],
+        stage: str
+    ) -> Dict[str, Any]:
+        """
+        Vurderer kommunal mottakskontroll og kompletthet etter SAK10 § 7-1 og PBL § 21-7.
+        Spesielt rettet mot nyere saker (0-75 dager / 1-2 måneder gamle):
+        - Sjekker om kommunen har overholdt 3-ukers mottakskontrollvinduet
+        - Vurderer om søknaden er komplett fra start eller om fristen er stanset med mangelbrev
+        - Avdekker forsinkede mangelbrev og krav på gebyravkorting
+        """
+        dato_str = sak_data.get("dato")
+        days_since = cls._calculate_days_in_process(dato_str)
+        is_recent = bool(days_since is not None and days_since <= 75)
+        
+        is_paused = deadline_info.get("is_deadline_paused", False)
+        pause_reason = deadline_info.get("deadline_pause_reason")
+        is_late_notice = deadline_info.get("is_late_deficiency_notice", False)
+        delay_days = deadline_info.get("first_response_delay_days")
+        fee_reduction = deadline_info.get("fee_reduction_percentage", 0)
+        
+        # Samle eventuelle mangelårsaker
+        deficiency_details = []
+        if pause_reason:
+            deficiency_details.append(pause_reason)
+            
+        # Sjekk om saken er ferdigbehandlet
+        if stage in ["Vedtatt / Tillatelse gitt", "Ferdigattest", "Ferdigbehandlet", "Avslått av kommunen"] or deadline_info.get("deadline_status") == "Vedtatt / Avsluttet":
+            return {
+                "is_recent_case": is_recent,
+                "intake_status": "Ferdigbehandlet",
+                "intake_status_label": "Ferdigbehandlet av kommunen",
+                "intake_deficiency_details": deficiency_details,
+                "intake_days_since_submission": days_since,
+                "intake_statutory_window_status": "Avsluttet (Vedtak fattet)"
+            }
+            
+        if is_paused:
+            if is_late_notice:
+                return {
+                    "is_recent_case": is_recent,
+                    "intake_status": "Forsinket mangelbrev",
+                    "intake_status_label": f"Forsinket mangelbrev ({fee_reduction}% gebyravkorting)",
+                    "intake_deficiency_details": deficiency_details,
+                    "intake_days_since_submission": days_since,
+                    "intake_statutory_window_status": f"Mangelbrev sendt etter {delay_days} dager (Lovfrist brutt)"
+                }
+            else:
+                return {
+                    "is_recent_case": is_recent,
+                    "intake_status": "Mangelbrev utstedt",
+                    "intake_status_label": "Frist stanset (Mangelbrev innen 3 uker)",
+                    "intake_deficiency_details": deficiency_details,
+                    "intake_days_since_submission": days_since,
+                    "intake_statutory_window_status": f"Mangelbrev sendt etter {delay_days or 'få'} dager (Lovlig stans)"
+                }
+                
+        # Ingen mangelbrev registrert
+        if days_since is not None and days_since <= 21:
+            days_left = max(0, 21 - days_since)
+            return {
+                "is_recent_case": is_recent,
+                "intake_status": "Avventer mottakskontroll",
+                "intake_status_label": f"Avventer mottakskontroll ({days_left} dager igjen av 3-ukersfristen)",
+                "intake_deficiency_details": deficiency_details,
+                "intake_days_since_submission": days_since,
+                "intake_statutory_window_status": f"Innenfor 3-ukersfristen ({days_since}/21 dager)"
+            }
+        elif days_since is not None and days_since > 21:
+            return {
+                "is_recent_case": is_recent,
+                "intake_status": "Komplett søknad",
+                "intake_status_label": "Komplett søknad (Mottakskontroll passert uten mangler)",
+                "intake_deficiency_details": deficiency_details,
+                "intake_days_since_submission": days_since,
+                "intake_statutory_window_status": "3-ukersfrist utløpt uten mangelbrev (Fristen løper uavbrutt)"
+            }
+        else:
+            return {
+                "is_recent_case": is_recent,
+                "intake_status": "Under behandling",
+                "intake_status_label": "Under behandling",
+                "intake_deficiency_details": deficiency_details,
+                "intake_days_since_submission": days_since,
+                "intake_statutory_window_status": "Løpende behandling"
+            }
 
     @staticmethod
     def _generate_summary(
@@ -927,6 +1026,9 @@ class ByggesakEvaluator:
             is_deadline_paused=evaluation.is_deadline_paused if evaluation else False,
             is_late_deficiency_notice=evaluation.is_late_deficiency_notice if evaluation else False,
             fee_reduction_percentage=evaluation.fee_reduction_percentage if evaluation else 0,
+            is_recent_case=evaluation.is_recent_case if evaluation else False,
+            intake_status=evaluation.intake_status if evaluation else "Ikke vurdert",
+            intake_days_since_submission=evaluation.intake_days_since_submission if evaluation else None,
             primary_company=primary_company,
             companies=companies,
             address_info=address_info,
