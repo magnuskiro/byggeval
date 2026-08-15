@@ -2508,7 +2508,7 @@ body {
 }
 
 /* ==========================================================================
-   Responsive Breakpoints
+   Responsive Breakpoints & Mobile Optimization
    ========================================================================== */
 
 @media (max-width: 1024px) {
@@ -2540,11 +2540,278 @@ body {
     }
 
     .map-canvas-container {
-        height: 450px;
+        height: 400px;
     }
 
     .drawer {
         max-width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .app-container {
+        padding: 0 14px 40px 14px;
+    }
+
+    /* Navbar on Mobile */
+    .navbar {
+        padding: 14px 0;
+        margin-bottom: 18px;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .brand-icon {
+        width: 38px;
+        height: 38px;
+        font-size: 20px;
+    }
+
+    .brand-title {
+        font-size: 18px;
+    }
+
+    .brand-subtitle {
+        font-size: 11px;
+    }
+
+    .nav-controls {
+        gap: 8px;
+    }
+
+    .api-status-badge {
+        padding: 4px 10px;
+        font-size: 11px;
+    }
+
+    /* Hero & Metrics Grid */
+    .hero-section {
+        margin-bottom: 20px;
+    }
+
+    .hero-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .metric-card {
+        padding: 12px 14px;
+    }
+
+    .metric-value {
+        font-size: 22px;
+    }
+
+    .metric-label {
+        font-size: 11px;
+    }
+
+    /* Touch-friendly Scrollable Tabs */
+    .view-tabs {
+        display: flex;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        gap: 6px;
+        padding-bottom: 4px;
+        margin-bottom: 18px;
+    }
+
+    .view-tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .tab-button {
+        flex-shrink: 0;
+        padding: 8px 14px;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    /* Filter Panel */
+    .filter-panel {
+        padding: 14px 12px;
+        margin-bottom: 16px;
+        border-radius: var(--radius-md);
+    }
+
+    .search-box-wrapper input {
+        font-size: 14px;
+        padding: 10px 12px 10px 38px;
+    }
+
+    .filter-controls {
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-top: 10px;
+    }
+
+    .filter-group label {
+        font-size: 11px;
+        margin-bottom: 2px;
+    }
+
+    .custom-select {
+        padding: 8px 10px;
+        font-size: 13px;
+        min-height: 40px;
+    }
+
+    /* Case Cards */
+    .cases-grid {
+        gap: 12px;
+    }
+
+    .case-card {
+        padding: 14px 14px;
+    }
+
+    .case-title {
+        font-size: 15px;
+        margin: 6px 0 8px 0;
+    }
+
+    .badges-row {
+        gap: 4px;
+        flex-wrap: wrap;
+    }
+
+    .badge {
+        font-size: 11px;
+        padding: 3px 8px;
+    }
+
+    /* Detail Drawer on Mobile: Fullscreen Sheet */
+    .drawer {
+        width: 100vw;
+        max-width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        border-radius: 0;
+        top: 0;
+        right: 0;
+    }
+
+    .drawer-content {
+        padding: 16px 14px 60px 14px;
+    }
+
+    .drawer-header {
+        padding-bottom: 14px;
+        margin-bottom: 14px;
+    }
+
+    .drawer-title {
+        font-size: 17px;
+    }
+
+    .deadline-stats-grid, .intake-stats-grid, .eval-stats-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+
+    /* Analytics Pane */
+    .analytics-filter-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+        padding: 16px 14px;
+    }
+
+    .analytics-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .analytics-kpi-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .kpi-card {
+        padding: 14px;
+    }
+
+    .kpi-value {
+        font-size: 24px;
+    }
+
+    /* Pre-Evaluation Pane on Mobile */
+    .preeval-header {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 16px 14px;
+        gap: 12px;
+    }
+
+    .preeval-title {
+        font-size: 18px;
+    }
+
+    .preeval-template-buttons {
+        align-items: flex-start;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .btn-template {
+        font-size: 11px;
+        padding: 5px 10px;
+    }
+
+    .preeval-form {
+        padding: 16px 14px;
+    }
+
+    .form-row-3 {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .preeval-kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .bya-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+
+    .report-header-card {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 16px 14px;
+    }
+
+    .report-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 480px) {
+    .hero-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+
+    .analytics-kpi-row {
+        grid-template-columns: 1fr;
+    }
+
+    .preeval-kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .preeval-features-list {
+        grid-template-columns: 1fr;
+    }
+
+    .deadline-stats-grid, .intake-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
     }
 }
 
