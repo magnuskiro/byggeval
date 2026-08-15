@@ -9,7 +9,7 @@ Evalueringsmotor for byggesaker:
 import re
 from typing import Optional, Tuple, List, Dict, Any
 from datetime import datetime
-from .models import AddressInfo, EvaluationResult, Byggesak, Dokument
+from .models import AddressInfo, EvaluationResult, Byggesak, Dokument, LegalCheckpoint
 
 
 class ByggesakEvaluator:
@@ -549,11 +549,14 @@ class ByggesakEvaluator:
     def _determine_stage(sak_data: Dict[str, Any], text: str) -> str:
         """Bestemmer hvor i saksbehandlingsløpet saken befinner seg."""
         status = sak_data.get("status", {})
-        if isinstance(status, dict) and status.get("erFerdig"):
+        status_tittel = status.get("tittel", "") if isinstance(status, dict) else ""
+        
+        if any(w in text for w in ["ferdigattest utstedt", "ferdigattest"]):
+            return "Ferdigattest"
+            
+        if (isinstance(status, dict) and status.get("erFerdig")) or status_tittel in ["Avsluttet", "Ferdigbehandlet", "Arkivert"]:
             return "Ferdigbehandlet"
             
-        if any(w in text for w in ["ferdigattest"]):
-            return "Ferdigattest omsøkt/utstedt"
         if any(w in text for w in ["igangsettingstillatelse", "igangsetting"]):
             return "Igangsettingstillatelse"
         if any(w in text for w in ["rammetillatelse", "tillatelse i ett trinn", "delegert vedtak", "godkjent søknad"]):
@@ -855,7 +858,7 @@ class ByggesakEvaluator:
 
         status_obj = raw_sak.get("status", {})
         status_tittel = status_obj.get("tittel", "Under behandling") if isinstance(status_obj, dict) else "Under behandling"
-        er_ferdig = status_obj.get("erFerdig", False) if isinstance(status_obj, dict) else False
+        er_ferdig = bool(status_obj.get("erFerdig", False)) or (status_tittel in ["Avsluttet", "Ferdigbehandlet", "Arkivert"]) or (decision_info.get("official_decision_type") == "Ferdigattest utstedt") or (evaluation is not None and evaluation.stage in ["Ferdigbehandlet", "Ferdigattest"])
 
         innsyn_url = f"https://www.tonsberg.kommune.no/tjenester/innsyn/sok-i-postlister-saker-og-dokumenter/#/details/{identifikator}"
 

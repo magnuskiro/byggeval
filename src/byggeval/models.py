@@ -40,6 +40,17 @@ class AddressInfo(BaseModel):
     longitude: Optional[float] = None
 
 
+class LegalCheckpoint(BaseModel):
+    """Enkelt juridisk vurderingstema i henhold til Plan- og bygningsloven og særlover."""
+    id: str  # f.eks. "strandsone", "plan_bya", "plassering_nabo", "infrastruktur_vei", "naturfarer_geo", "visuell_kultur", "dispensasjon", "prosess_ansvar"
+    title: str  # f.eks. "Strandsonen og 100-metersbeltet (PBL § 1-8)"
+    legal_reference: str  # f.eks. "pbl § 1-8 / SPR for strandsonen"
+    status: str  # "Ivaretatt / Konform", "Krever avklaring / Mangel", "Kritisk planavvik / Avslagsrisiko", "Ikke relevant"
+    risk_level: str  # "Lav", "Moderat", "Høy", "Kritisk"
+    findings: str  # Detaljert saksbehandlervurdering av saken opp mot lovkravet
+    requirements_to_pass: Optional[str] = None  # Konkrete krav søker må oppfylle for godkjenning
+
+
 class EvaluationResult(BaseModel):
     """Resultat fra automatisk evaluering og risikovurdering av byggesaken."""
     category: str  # f.eks. Nybygg, Tilbygg, Bruksendring, Riving, Garasje, Ulovlighet, VA, etc.
@@ -54,6 +65,9 @@ class EvaluationResult(BaseModel):
     summary: str = ""
     recommendation: Optional[str] = None
     days_in_process: Optional[int] = None
+    
+    # Helhetlig juridisk vurderingsramme etter Plan- og bygningsloven
+    legal_checkpoints: List[LegalCheckpoint] = Field(default_factory=list)
     
     # Lovpålagt saksbehandlingsfrist og gjenværende tid (pbl § 21-7 / SAK10)
     statutory_deadline_weeks: int = 12  # 3 eller 12 uker (SAK10 § 7-1 / § 7-2)

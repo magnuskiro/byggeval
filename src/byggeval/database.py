@@ -416,7 +416,7 @@ class Database:
             cursor.execute(f"SELECT COUNT(*) FROM cases{where_sql}", base_params)
             total_cases = cursor.fetchone()[0]
 
-            sql_comp, p_comp = add_filter("er_ferdig = 1 OR stage = 'Ferdigbehandlet'")
+            sql_comp, p_comp = add_filter("er_ferdig = 1 OR status_tittel = 'Avsluttet' OR stage IN ('Ferdigbehandlet', 'Ferdigattest', 'Ferdigattest omsøkt/utstedt', 'Ferdigattest utstedt') OR official_decision_type = 'Ferdigattest utstedt'")
             cursor.execute(f"SELECT COUNT(*) FROM cases{sql_comp}", p_comp)
             completed_cases = cursor.fetchone()[0]
 
