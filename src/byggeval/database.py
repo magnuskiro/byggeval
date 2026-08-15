@@ -432,7 +432,6 @@ class Database:
                 FROM cases
                 WHERE latitude IS NOT NULL AND longitude IS NOT NULL
                 ORDER BY substr(dato, 7, 4) || substr(dato, 4, 2) || substr(dato, 1, 2) DESC
-                LIMIT 500
             """)
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
