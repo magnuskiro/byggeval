@@ -140,3 +140,50 @@ class SyncStats(BaseModel):
     synced_cases: int = 0
     errors: int = 0
     status: str = "idle"
+
+
+class ImprovementAction(BaseModel):
+    """Konkret forbedringsforslag for å øke innvilgelsessannsynligheten."""
+    priority: str  # "Høy", "Medium", "Lav"
+    category: str  # f.eks. "Plangrunnlag & BYA", "Strandsone", "Nabosamtykke", "Vedlegg"
+    title: str
+    description: str
+    action_required: str  # Hva søker må gjøre konkret
+
+
+class PreEvaluationReport(BaseModel):
+    """Omfattende rapport for forhåndsevaluering av usendt byggesøknad."""
+    tiltak_tittel: str
+    category: str
+    subcategory: Optional[str] = None
+    address: Optional[str] = None
+    matrikkel: Optional[str] = None
+    
+    # Kvantitative nøkkeltall & score
+    approval_probability_pct: int  # 0 - 100 %
+    probability_verdict: str  # f.eks. "Høy sannsynlighet for innvilgelse"
+    quality_score: int  # 0 - 100
+    complexity_score: int  # 1 - 10
+    complexity_level: str  # Enkel, Standard, Kompleks, Svært kompleks
+    risk_level: str  # Lav, Moderat, Høy, Kritisk
+    risk_score: int  # 0 - 100
+    
+    # Saksbehandlingsfrist & lovhjemmel
+    statutory_deadline_weeks: int  # 3 eller 12 uker
+    statutory_deadline_basis: str  # Begrunnelse for fristvalg (pbl § 21-7 / SAK10)
+    
+    # Areal- og utnyttelsesberegning (%-BYA)
+    bya_summary: Optional[Dict[str, Any]] = None
+    
+    # Forbedringstiltak og sjekkpunkter
+    improvements: List[ImprovementAction] = Field(default_factory=list)
+    missing_attachments: List[str] = Field(default_factory=list)
+    strengths: List[str] = Field(default_factory=list)
+    legal_checkpoints: List[LegalCheckpoint] = Field(default_factory=list)
+    
+    # Oppsummering og saksbehandlerråd
+    summary: str
+    recommendations: str
+    evaluated_at: str = Field(default_factory=lambda: datetime.now().strftime("%d.%m.%Y %H:%M"))
+    extracted_text_snippet: Optional[str] = None
+

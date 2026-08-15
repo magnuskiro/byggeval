@@ -1308,8 +1308,454 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/'/g, "&#039;");
     }
 
+    // =========================================================================
+    // Pre-Evaluation / Søknadssjekk Logic
+    // =========================================================================
+
+    function initPreEvaluation() {
+        let uploadedFiles = [];
+
+        const dropzone = document.getElementById("preevalDropzone");
+        const fileInput = document.getElementById("preevalFileInput");
+        const filesList = document.getElementById("preevalFilesList");
+        const form = document.getElementById("preEvalForm");
+        const emptyState = document.getElementById("preevalEmptyState");
+        const loadingState = document.getElementById("preevalLoadingState");
+        const reportContainer = document.getElementById("preevalReportContainer");
+        const btnRun = document.getElementById("btnRunPreEval");
+
+        // Template buttons
+        const btnTplGarage = document.getElementById("btnTplGarage");
+        const btnTplExtension = document.getElementById("btnTplExtension");
+        const btnTplCabin = document.getElementById("btnTplCabin");
+
+        // Drag & Drop
+        if (dropzone && fileInput) {
+            ["dragenter", "dragover"].forEach(eventName => {
+                dropzone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropzone.classList.add("dragover");
+                });
+            });
+
+            ["dragleave", "drop"].forEach(eventName => {
+                dropzone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dropzone.classList.remove("dragover");
+                });
+            });
+
+            dropzone.addEventListener("drop", (e) => {
+                const dt = e.dataTransfer;
+                if (dt && dt.files && dt.files.length > 0) {
+                    handleFilesAdded(Array.from(dt.files));
+                }
+            });
+
+            fileInput.addEventListener("change", (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                    handleFilesAdded(Array.from(e.target.files));
+                }
+            });
+        }
+
+        function handleFilesAdded(files) {
+            files.forEach(f => {
+                if (!uploadedFiles.some(existing => existing.name === f.name && existing.size === f.size)) {
+                    uploadedFiles.push(f);
+                }
+            });
+            renderUploadedFilesList();
+        }
+
+        function renderUploadedFilesList() {
+            if (!filesList) return;
+            if (uploadedFiles.length === 0) {
+                filesList.innerHTML = '';
+                filesList.classList.add("hidden");
+                return;
+            }
+
+            filesList.classList.remove("hidden");
+            filesList.innerHTML = uploadedFiles.map((f, idx) => `
+                <div class="uploaded-file-item">
+                    <span><i class="ri-file-text-line"></i> <strong>${escapeHtml(f.name)}</strong> (${(f.size / 1024).toFixed(1)} KB)</span>
+                    <button type="button" class="btn-file-remove" data-idx="${idx}" title="Fjern fil"><i class="ri-delete-bin-line"></i></button>
+                </div>
+            `).join('');
+
+            filesList.querySelectorAll(".btn-file-remove").forEach(btn => {
+                btn.addEventListener("click", () => {
+                    const idx = parseInt(btn.getAttribute("data-idx"), 10);
+                    uploadedFiles.splice(idx, 1);
+                    renderUploadedFilesList();
+                });
+            });
+        }
+
+        // Templates
+        if (btnTplGarage) {
+            btnTplGarage.addEventListener("click", () => {
+                document.getElementById("preevalTitle").value = "Oppføring av ny dobbelgarasje og endring av avkjørsel";
+                document.getElementById("preevalAddress").value = "Vålegaten 15 - 1006/30";
+                document.getElementById("preevalDesc").value = "Ønsker å bygge frittliggende dobbelgarasje på 48 m² samt flytte avkjørsel mot kommunal bygate.";
+                document.getElementById("preevalLotArea").value = "450";
+                document.getElementById("preevalExistingBya").value = "120";
+                document.getElementById("preevalMeasureBya").value = "48";
+                document.getElementById("preevalBoundaryDist").value = "1.0";
+                
+                document.getElementById("chkNabosamtykke").checked = false;
+                document.getElementById("chkAvkjorsel").checked = true;
+                document.getElementById("chkStrandsone").checked = false;
+                document.getElementById("chkLnfr").checked = false;
+                document.getElementById("chkDispensasjon").checked = false;
+                document.getElementById("chkNabomerknader").checked = false;
+                document.getElementById("chkSituasjonsplan").checked = true;
+                document.getElementById("chkFasader").checked = true;
+                document.getElementById("chkSnitt").checked = true;
+                document.getElementById("chkAnsvarsrett").checked = true;
+            });
+        }
+
+        if (btnTplExtension) {
+            btnTplExtension.addEventListener("click", () => {
+                document.getElementById("preevalTitle").value = "Tilbygg til enebolig (stue og bad)";
+                document.getElementById("preevalAddress").value = "Trollheggveien 12 - 140/850";
+                document.getElementById("preevalDesc").value = "Oppføring av 1-etasjes tilbygg på 35 m². Avstand til nabo i øst er 2,5 meter. Skriftlig samtykke foreligger.";
+                document.getElementById("preevalLotArea").value = "820";
+                document.getElementById("preevalExistingBya").value = "135";
+                document.getElementById("preevalMeasureBya").value = "35";
+                document.getElementById("preevalBoundaryDist").value = "2.5";
+                
+                document.getElementById("chkNabosamtykke").checked = true;
+                document.getElementById("chkAvkjorsel").checked = false;
+                document.getElementById("chkStrandsone").checked = false;
+                document.getElementById("chkLnfr").checked = false;
+                document.getElementById("chkDispensasjon").checked = false;
+                document.getElementById("chkNabomerknader").checked = false;
+                document.getElementById("chkSituasjonsplan").checked = true;
+                document.getElementById("chkFasader").checked = true;
+                document.getElementById("chkSnitt").checked = true;
+                document.getElementById("chkAnsvarsrett").checked = true;
+            });
+        }
+
+        if (btnTplCabin) {
+            btnTplCabin.addEventListener("click", () => {
+                document.getElementById("preevalTitle").value = "Oppgradering og tilbygg til fritidsbolig i strandsonen";
+                document.getElementById("preevalAddress").value = "Valløveien 150 - 151/45";
+                document.getElementById("preevalDesc").value = "Tilbygg på 22 m² til eksisterende hytte i 100-metersbeltet langs Oslofjorden. Dispensasjonssøknad etter pbl § 19-2 er utarbeidet.";
+                document.getElementById("preevalLotArea").value = "1100";
+                document.getElementById("preevalExistingBya").value = "85";
+                document.getElementById("preevalMeasureBya").value = "22";
+                document.getElementById("preevalBoundaryDist").value = "6.0";
+                
+                document.getElementById("chkNabosamtykke").checked = false;
+                document.getElementById("chkAvkjorsel").checked = false;
+                document.getElementById("chkStrandsone").checked = true;
+                document.getElementById("chkLnfr").checked = false;
+                document.getElementById("chkDispensasjon").checked = true;
+                document.getElementById("chkNabomerknader").checked = false;
+                document.getElementById("chkSituasjonsplan").checked = true;
+                document.getElementById("chkFasader").checked = true;
+                document.getElementById("chkSnitt").checked = true;
+                document.getElementById("chkAnsvarsrett").checked = true;
+            });
+        }
+
+        // Form Submit
+        if (form) {
+            form.addEventListener("submit", async (e) => {
+                e.preventDefault();
+
+                const title = document.getElementById("preevalTitle").value.trim();
+                if (!title) {
+                    alert("Vennligst oppgi hva som skal bygges (Tittel).");
+                    return;
+                }
+
+                // Show Loading State
+                emptyState.classList.add("hidden");
+                reportContainer.classList.add("hidden");
+                loadingState.classList.remove("hidden");
+                btnRun.disabled = true;
+
+                try {
+                    const formData = new FormData();
+                    formData.append("tiltak_tittel", title);
+                    formData.append("address_raw", document.getElementById("preevalAddress").value.trim());
+                    formData.append("beskrivelse", document.getElementById("preevalDesc").value.trim());
+
+                    const lot = document.getElementById("preevalLotArea").value;
+                    if (lot) formData.append("tomteareal_m2", lot);
+                    const eksBya = document.getElementById("preevalExistingBya").value;
+                    if (eksBya) formData.append("bya_eksisterende_m2", eksBya);
+                    const measBya = document.getElementById("preevalMeasureBya").value;
+                    if (measBya) formData.append("bya_tiltak_m2", measBya);
+                    const dist = document.getElementById("preevalBoundaryDist").value;
+                    if (dist) formData.append("avstand_nabogrense_m", dist);
+
+                    formData.append("har_nabosamtykke", document.getElementById("chkNabosamtykke").checked);
+                    formData.append("har_avkjorsel_endring", document.getElementById("chkAvkjorsel").checked);
+                    formData.append("er_i_strandsone", document.getElementById("chkStrandsone").checked);
+                    formData.append("er_i_lnfr", document.getElementById("chkLnfr").checked);
+                    formData.append("har_dispensasjonssoknad", document.getElementById("chkDispensasjon").checked);
+                    formData.append("har_nabomerknader", document.getElementById("chkNabomerknader").checked);
+                    formData.append("har_situasjonsplan", document.getElementById("chkSituasjonsplan").checked);
+                    formData.append("har_fasadetegninger", document.getElementById("chkFasader").checked);
+                    formData.append("har_snittegninger", document.getElementById("chkSnitt").checked);
+                    formData.append("har_ansvarsretter", document.getElementById("chkAnsvarsrett").checked);
+
+                    uploadedFiles.forEach(file => {
+                        formData.append("files", file);
+                    });
+
+                    const res = await fetch("/api/pre-evaluate", {
+                        method: "POST",
+                        body: formData
+                    });
+
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.detail || "Kunne ikke evaluere byggesøknaden");
+                    }
+
+                    const report = await res.json();
+                    loadingState.classList.add("hidden");
+                    renderPreEvalReport(report);
+                    reportContainer.classList.remove("hidden");
+
+                    reportContainer.scrollIntoView({ behavior: "smooth", block: "start" });
+
+                } catch (err) {
+                    loadingState.classList.add("hidden");
+                    emptyState.classList.remove("hidden");
+                    alert("Feil under evaluering: " + err.message);
+                } finally {
+                    btnRun.disabled = false;
+                }
+            });
+        }
+
+        function renderPreEvalReport(rep) {
+            if (!reportContainer) return;
+
+            let probCardClass = "kpi-prob-high";
+            let probIcon = "ri-checkbox-circle-fill";
+            if (rep.approval_probability_pct < 45) {
+                probCardClass = "kpi-prob-critical";
+                probIcon = "ri-close-circle-fill";
+            } else if (rep.approval_probability_pct < 80) {
+                probCardClass = "kpi-prob-warning";
+                probIcon = "ri-alert-fill";
+            }
+
+            const bya = rep.bya_summary;
+            let byaHtml = '';
+            if (bya) {
+                const fillPct = Math.min(100, Math.round((bya.beregnet_bya_prosent / 40.0) * 100));
+                const fillClass = bya.er_innenfor_kpa ? "bya-fill-ok" : "bya-fill-over";
+                byaHtml = `
+                    <div class="preeval-bya-box">
+                        <div class="bya-box-title">
+                            <span><i class="ri-ruler-2-line"></i> Arealregnskap & Utnyttelsesgrad (%-BYA)</span>
+                            <span class="badge ${bya.er_innenfor_kpa ? 'badge-official-approved' : 'badge-official-rejected'}">${escapeHtml(bya.status_tekst)}</span>
+                        </div>
+                        <div class="bya-meter-track">
+                            <div class="bya-meter-fill ${fillClass}" style="width: ${fillPct}%;"></div>
+                        </div>
+                        <div class="bya-stats-grid">
+                            <div class="bya-stat-col">
+                                <span>Tomteareal</span>
+                                <span>${bya.tomteareal_m2} m²</span>
+                            </div>
+                            <div class="bya-stat-col">
+                                <span>Beregnet total BYA</span>
+                                <span>${bya.total_bya_m2} m²</span>
+                            </div>
+                            <div class="bya-stat-col">
+                                <span>Beregnet %-BYA</span>
+                                <span style="color: ${bya.er_innenfor_kpa ? '#059669' : '#dc2626'};">${bya.beregnet_bya_prosent} %</span>
+                            </div>
+                            <div class="bya-stat-col">
+                                <span>Kommuneplan (KPA)</span>
+                                <span>Maks ${bya.kpa_tillatt_bya_prosent} %</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const improvementsHtml = rep.improvements && rep.improvements.length > 0 ? `
+                <div class="preeval-actions-box">
+                    <div class="preeval-actions-title">
+                        <i class="ri-list-check"></i>
+                        <span>Prioritert Forbedringsplan (Må/Bør utbedres før innsending)</span>
+                    </div>
+                    <div class="action-items-list">
+                        ${rep.improvements.map(imp => {
+                            const pClass = imp.priority === 'Høy' ? 'action-priority-high' : (imp.priority === 'Medium' ? 'action-priority-medium' : 'action-priority-low');
+                            const bClass = imp.priority === 'Høy' ? 'action-badge-high' : 'action-badge-medium';
+                            return `
+                                <div class="action-item-card ${pClass}">
+                                    <div class="action-item-header">
+                                        <span class="action-item-title">${escapeHtml(imp.title)}</span>
+                                        <span class="${bClass}">${escapeHtml(imp.priority)} prioritet &bull; ${escapeHtml(imp.category)}</span>
+                                    </div>
+                                    <div class="action-item-desc">${escapeHtml(imp.description)}</div>
+                                    <div class="action-item-req">💡 <strong>Konkret tiltak:</strong> ${escapeHtml(imp.action_required)}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            ` : `
+                <div class="preeval-actions-box">
+                    <div class="preeval-actions-title" style="color: #059669;">
+                        <i class="ri-checkbox-circle-fill"></i>
+                        <span>Ingen kritiske mangler avdekket</span>
+                    </div>
+                    <p style="font-size: 13px; color: #475569; margin: 0;">Søknaden overholder alle grunnleggende krav etter plan- og bygningsloven og KPA Tønsberg.</p>
+                </div>
+            `;
+
+            const legalHtml = rep.legal_checkpoints && rep.legal_checkpoints.length > 0 ? `
+                <div class="preeval-checkpoints-box">
+                    <div class="preeval-actions-title">
+                        <i class="ri-scales-3-line"></i>
+                        <span>Juridisk Lovlighetskontroll (PBL & TEK17 Sjekkpunkter)</span>
+                    </div>
+                    <div class="checkpoints-grid">
+                        ${rep.legal_checkpoints.map(cp => {
+                            let cardClass = 'cp-conform';
+                            let statusBadge = '<span class="badge badge-official-approved"><i class="ri-check-line"></i> Ivaretatt</span>';
+                            if (cp.status.includes('Kritisk')) {
+                                cardClass = 'cp-critical';
+                                statusBadge = '<span class="badge badge-official-rejected"><i class="ri-close-line"></i> Kritisk avvik</span>';
+                            } else if (cp.status.includes('Krever') || cp.status.includes('Mangel')) {
+                                cardClass = 'cp-warning';
+                                statusBadge = '<span class="badge badge-official-warning"><i class="ri-alert-line"></i> Krever avklaring</span>';
+                            }
+
+                            return `
+                                <div class="cp-card ${cardClass}">
+                                    <div class="cp-header">
+                                        <span class="cp-title">${escapeHtml(cp.title)}</span>
+                                        ${statusBadge}
+                                    </div>
+                                    <div class="cp-ref">${escapeHtml(cp.legal_reference)}</div>
+                                    <div class="cp-findings">${escapeHtml(cp.findings)}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            ` : '';
+
+            const attachmentsHtml = `
+                <div class="preeval-attachments-box">
+                    <div class="preeval-actions-title">
+                        <i class="ri-attachment-2"></i>
+                        <span>Vedleggskontroll & Dokumentasjonskrav</span>
+                    </div>
+                    <div class="attachments-list">
+                        ${rep.missing_attachments && rep.missing_attachments.length > 0 ? rep.missing_attachments.map(att => `
+                            <div class="att-item-missing"><i class="ri-error-warning-fill"></i> Mangler: ${escapeHtml(att)}</div>
+                        `).join('') : ''}
+                        ${rep.strengths && rep.strengths.length > 0 ? rep.strengths.map(st => `
+                            <div class="att-item-ok"><i class="ri-checkbox-circle-fill"></i> ${escapeHtml(st)}</div>
+                        `).join('') : ''}
+                    </div>
+                </div>
+            `;
+
+            reportContainer.innerHTML = `
+                <div class="report-header-card">
+                    <div class="report-title-area">
+                        <h3><i class="ri-file-chart-line"></i> Evalueringsrapport: ${escapeHtml(rep.tiltak_tittel)}</h3>
+                        <div class="report-subtitle">
+                            <span><i class="ri-map-pin-line"></i> ${escapeHtml(rep.address || 'Tønsberg')}</span>
+                            ${rep.matrikkel ? `<span><i class="ri-government-line"></i> ${escapeHtml(rep.matrikkel)}</span>` : ''}
+                            <span><i class="ri-calendar-line"></i> Evaluert: ${escapeHtml(rep.evaluated_at)}</span>
+                        </div>
+                    </div>
+                    <div class="report-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" id="btnPrintReport"><i class="ri-printer-line"></i> Skriv ut rapport</button>
+                        <button type="button" class="btn btn-secondary btn-sm" id="btnResetReport"><i class="ri-refresh-line"></i> Nullstill</button>
+                    </div>
+                </div>
+
+                <!-- 4 KPI Cards -->
+                <div class="preeval-kpi-grid">
+                    <div class="preeval-kpi-card ${probCardClass}">
+                        <span class="preeval-kpi-label">Innvilgelsessannsynlighet</span>
+                        <div class="preeval-kpi-val"><i class="${probIcon}"></i> ${rep.approval_probability_pct} %</div>
+                        <div class="preeval-kpi-sub">${escapeHtml(rep.probability_verdict)}</div>
+                    </div>
+
+                    <div class="preeval-kpi-card">
+                        <span class="preeval-kpi-label">Søknadskvalitetsscore</span>
+                        <div class="preeval-kpi-val" style="color: #4338ca;">${rep.quality_score} <span style="font-size:16px; color:#64748b;">/ 100</span></div>
+                        <div class="preeval-kpi-sub">Kvalitetsvurdering før innsending</div>
+                    </div>
+
+                    <div class="preeval-kpi-card">
+                        <span class="preeval-kpi-label">Kompleksitetsgrad</span>
+                        <div class="preeval-kpi-val" style="color: #0369a1;">${escapeHtml(rep.complexity_level)}</div>
+                        <div class="preeval-kpi-sub">Kompleksitetsscore: ${rep.complexity_score} av 10</div>
+                    </div>
+
+                    <div class="preeval-kpi-card">
+                        <span class="preeval-kpi-label">Forventet Lovfrist</span>
+                        <div class="preeval-kpi-val" style="color: #0f766e;">${rep.statutory_deadline_weeks} uker</div>
+                        <div class="preeval-kpi-sub">${rep.statutory_deadline_weeks === 3 ? 'Rask 3-ukersbehandling (§ 21-7)' : '12-ukers ordinær behandling'}</div>
+                    </div>
+                </div>
+
+                <!-- BYA Bar & Stats -->
+                ${byaHtml}
+
+                <!-- Prioritized Action Plan -->
+                ${improvementsHtml}
+
+                <!-- Legal Checkpoints -->
+                ${legalHtml}
+
+                <!-- Attachments Review -->
+                ${attachmentsHtml}
+
+                <!-- Recommendations Callout -->
+                <div class="eval-recommendation-box" style="margin-top: 4px;">
+                    <div class="eval-rec-title">
+                        <i class="ri-shield-star-line"></i>
+                        <span>Saksbehandlerens Samlede Råd</span>
+                    </div>
+                    <p class="eval-rec-text" style="font-size: 13px; line-height: 1.5; margin: 0;">${escapeHtml(rep.recommendations)}</p>
+                </div>
+            `;
+
+            // Setup Print & Reset Listeners
+            const btnPrint = document.getElementById("btnPrintReport");
+            if (btnPrint) {
+                btnPrint.addEventListener("click", () => window.print());
+            }
+
+            const btnReset = document.getElementById("btnResetReport");
+            if (btnReset) {
+                btnReset.addEventListener("click", () => {
+                    reportContainer.classList.add("hidden");
+                    emptyState.classList.remove("hidden");
+                });
+            }
+        }
+    }
+
     // Initial Load
     fetchStats();
     fetchCompanies();
     fetchCases();
+    initPreEvaluation();
 });
+

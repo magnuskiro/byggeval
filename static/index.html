@@ -131,6 +131,10 @@
                 <i class="ri-pie-chart-2-line"></i>
                 <span>Statistikk & Analyse</span>
             </button>
+            <button class="tab-button" data-tab="preeval" role="tab" aria-selected="false" id="tabPreEval">
+                <i class="ri-file-search-line"></i>
+                <span>Søknadssjekk (Pre-flight)</span>
+            </button>
         </nav>
 
         <!-- View: Explorer (Default) -->
@@ -393,6 +397,177 @@
                     <h3 class="chart-title"><i class="ri-building-4-line"></i> Mest Aktive Utførende Foretak & Arkitekter i Tønsberg</h3>
                     <div class="chart-wrapper-tall">
                         <canvas id="chartCompanies"></canvas>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- View: Pre-Evaluation / Søknadssjekk (Pre-flight for usendte saker) -->
+        <main class="tab-pane hidden" id="pane-preeval">
+            <div class="preeval-container">
+                <!-- Header & Quick Templates -->
+                <div class="preeval-header">
+                    <div>
+                        <h2 class="preeval-title"><i class="ri-file-shield-2-line"></i> Forhåndsevaluering av Ny Byggesak</h2>
+                        <p class="preeval-subtitle">
+                            Last opp tegninger/søknad eller fyll inn prosjektdata for å teste søknaden <strong>før</strong> innsending til Tønsberg kommune.
+                            Få estimert <strong>godkjenningssannsynlighet</strong>, <strong>kvalitetsscore</strong>, <strong>kompleksitetsgrad</strong>, <strong>lovpålagt frist</strong> og <strong>konkrete forbedringstiltak</strong>.
+                        </p>
+                    </div>
+                    <div class="preeval-template-buttons">
+                        <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Eksempler:</span>
+                        <button type="button" class="btn-template" id="btnTplGarage">🚗 Garasje med BYA-overskridelse</button>
+                        <button type="button" class="btn-template" id="btnTplExtension">🏡 Tilbygg med nabosamtykke</button>
+                        <button type="button" class="btn-template" id="btnTplCabin">🌊 Tiltak i strandsone</button>
+                    </div>
+                </div>
+
+                <div class="preeval-grid">
+                    <!-- Left Column: Input Form & File Dropzone -->
+                    <div class="preeval-form-col">
+                        <form id="preEvalForm" class="preeval-form">
+                            <!-- File Upload Area -->
+                            <div class="form-section">
+                                <label class="form-section-title"><i class="ri-upload-cloud-2-line"></i> 1. Last opp søknadsdokumenter / tegninger (Valgfritt)</label>
+                                <p class="form-section-desc">Last opp situasjonsplan, fasadetegninger, dispensasjonssøknad eller nabovarsel (PDF, JPG, PNG, TXT):</p>
+                                
+                                <div class="dropzone" id="preevalDropzone">
+                                    <i class="ri-file-upload-line dropzone-icon"></i>
+                                    <div class="dropzone-text">
+                                        <strong>Dra og slipp filer her</strong>, eller <span class="dropzone-link">bla gjennom maskinen</span>
+                                    </div>
+                                    <div class="dropzone-hint">Støtter PDF, JPG, PNG, TXT, JSON (Maks 15 MB)</div>
+                                    <input type="file" id="preevalFileInput" multiple accept=".pdf,.png,.jpg,.jpeg,.txt,.json" class="dropzone-input">
+                                </div>
+                                <div class="uploaded-files-list hidden" id="preevalFilesList"></div>
+                            </div>
+
+                            <!-- Project Info -->
+                            <div class="form-section">
+                                <label class="form-section-title"><i class="ri-draft-line"></i> 2. Tiltak & Eiendom</label>
+                                <div class="form-group">
+                                    <label for="preevalTitle">Hva skal bygges? (Tittel / Formål) <span style="color:var(--danger);">*</span></label>
+                                    <input type="text" id="preevalTitle" required placeholder="f.eks. Oppføring av ny dobbelgarasje og endring av avkjørsel" class="custom-input">
+                                </div>
+                                <div class="form-group">
+                                    <label for="preevalAddress">Adresse / Gnr/Bnr i Tønsberg (Valgfritt)</label>
+                                    <input type="text" id="preevalAddress" placeholder="f.eks. Vålegaten 15 - 1006/30 eller Åsgårdstrandsveien 120" class="custom-input">
+                                </div>
+                                <div class="form-group">
+                                    <label for="preevalDesc">Prosjektbeskrivelse (Valgfritt)</label>
+                                    <textarea id="preevalDesc" rows="3" placeholder="Kort beskrivelse av materialer, plassering, høyder og eventuelle særlige forhold..." class="custom-textarea"></textarea>
+                                </div>
+                            </div>
+
+                            <!-- Lot & BYA Calculator -->
+                            <div class="form-section">
+                                <label class="form-section-title"><i class="ri-ruler-2-line"></i> 3. Tomtestørrelse & Utnyttelsesgrad (%-BYA)</label>
+                                <p class="form-section-desc">Kommuneplanens arealdel i Tønsberg tillater normalt maks <strong>25 % BYA</strong> i boligområder.</p>
+                                
+                                <div class="form-row-3">
+                                    <div class="form-group">
+                                        <label for="preevalLotArea">Tomteareal (m²)</label>
+                                        <input type="number" id="preevalLotArea" min="1" step="1" placeholder="f.eks. 650" class="custom-input">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="preevalExistingBya">Eksisterende BYA (m²)</label>
+                                        <input type="number" id="preevalExistingBya" min="0" step="0.5" placeholder="f.eks. 110" class="custom-input">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="preevalMeasureBya">Nytt tiltaks BYA (m²)</label>
+                                        <input type="number" id="preevalMeasureBya" min="0" step="0.5" placeholder="f.eks. 45" class="custom-input">
+                                    </div>
+                                </div>
+                                <div class="form-group" style="margin-top: 8px;">
+                                    <label for="preevalBoundaryDist">Korteste avstand til nabogrense (meter)</label>
+                                    <input type="number" id="preevalBoundaryDist" min="0" max="100" step="0.1" placeholder="f.eks. 1.0 (Lovkrav er min. 4,0 m uten samtykke)" class="custom-input">
+                                </div>
+                            </div>
+
+                            <!-- Legal & Technical Checkboxes -->
+                            <div class="form-section">
+                                <label class="form-section-title"><i class="ri-checkbox-multiple-line"></i> 4. Planmessige forutsetninger & Vedlegg</label>
+                                
+                                <div class="checkbox-grid">
+                                    <label class="custom-checkbox-label">
+                                        <input type="checkbox" id="chkNabosamtykke">
+                                        <span><strong>Skriftlig nabosamtykke</strong> foreligger (pbl § 29-4)</span>
+                                    </label>
+                                    <label class="custom-checkbox-label">
+                                        <input type="checkbox" id="chkAvkjorsel">
+                                        <span>Omfatter <strong>endring/flytting av avkjørsel</strong></span>
+                                    </label>
+                                    <label class="custom-checkbox-label">
+                                        <input type="checkbox" id="chkStrandsone">
+                                        <span>Tiltaket er i <strong>strandsonen / 100m-beltet</strong> (§ 1-8)</span>
+                                    </label>
+                                    <label class="custom-checkbox-label">
+                                        <input type="checkbox" id="chkLnfr">
+                                        <span>Ligger i <strong>LNFR-område</strong> (Landbruk/natur)</span>
+                                    </label>
+                                    <label class="custom-checkbox-label">
+                                        <input type="checkbox" id="chkDispensasjon">
+                                        <span><strong>Dispensasjonssøknad</strong> er utarbeidet (§ 19-2)</span>
+                                    </label>
+                                    <label class="custom-checkbox-label">
+                                        <input type="checkbox" id="chkNabomerknader">
+                                        <span>Det er mottatt <strong>nabomerknader/protester</strong></span>
+                                    </label>
+                                    <label class="custom-checkbox-label">
+                                        <input type="checkbox" id="chkSituasjonsplan" checked>
+                                        <span><strong>Situasjonsplan (1:500)</strong> er klar</span>
+                                    </label>
+                                    <label class="custom-checkbox-label">
+                                        <input type="checkbox" id="chkFasader" checked>
+                                        <span><strong>Fasadetegninger (1:100)</strong> er klare</span>
+                                    </label>
+                                    <label class="custom-checkbox-label">
+                                        <input type="checkbox" id="chkSnitt" checked>
+                                        <span><strong>Snittegninger (1:100)</strong> er klare</span>
+                                    </label>
+                                    <label class="custom-checkbox-label">
+                                        <input type="checkbox" id="chkAnsvarsrett">
+                                        <span>Gjennomføringsplan & <strong>ansvarsretter</strong> er avklart</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <button type="submit" class="btn btn-primary btn-lg btn-block" id="btnRunPreEval">
+                                <i class="ri-rocket-2-line"></i>
+                                <span>Kjør Forhåndsevaluering & Beregn Godkjenningssjanse</span>
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Right Column: Results & Interactive Scorecard -->
+                    <div class="preeval-result-col" id="preevalResultCol">
+                        <!-- Initial Empty State -->
+                        <div class="preeval-empty-state" id="preevalEmptyState">
+                            <div class="empty-icon"><i class="ri-draft-line"></i></div>
+                            <h3>Klar til å forhåndsevaluere</h3>
+                            <p>
+                                Fyll ut prosjektopplysningene eller velg et ferdig eksempel til venstre for å kjøre en fullverdig kommunal forhåndsanalyse.
+                            </p>
+                            <div class="preeval-features-list">
+                                <div class="feat-item"><i class="ri-checkbox-circle-fill"></i> Sjekker 8 juridiske sjekkpunkter (PBL & TEK17)</div>
+                                <div class="feat-item"><i class="ri-checkbox-circle-fill"></i> Beregner tomtens tålegrense og %-BYA mot KPA Tønsberg</div>
+                                <div class="feat-item"><i class="ri-checkbox-circle-fill"></i> Avdekker manglende vedlegg før saksbehandling stanser</div>
+                                <div class="feat-item"><i class="ri-checkbox-circle-fill"></i> Gir estimert lovfrist (3 vs 12 uker) og innvilgelsessannsynlighet</div>
+                            </div>
+                        </div>
+
+                        <!-- Loading State -->
+                        <div class="preeval-loading-state hidden" id="preevalLoadingState">
+                            <div class="spinner-large"></div>
+                            <h4>Analyserer byggesaken mot Plan- og bygningsloven...</h4>
+                            <p id="preevalLoadingProgress">Beregner utnyttelsesgrad, avstander og planoverholdelse...</p>
+                        </div>
+
+                        <!-- Full Report Container (Rendered dynamically) -->
+                        <div class="preeval-report-container hidden" id="preevalReportContainer">
+                            <!-- Innhold genereres i app.js -->
+                        </div>
                     </div>
                 </div>
             </div>

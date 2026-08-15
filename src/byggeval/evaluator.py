@@ -9,7 +9,7 @@ Evalueringsmotor for byggesaker:
 import re
 from typing import Optional, Tuple, List, Dict, Any
 from datetime import datetime
-from .models import AddressInfo, EvaluationResult, Byggesak, Dokument, LegalCheckpoint
+from .models import AddressInfo, EvaluationResult, Byggesak, Dokument, LegalCheckpoint, PreEvaluationReport, ImprovementAction
 
 
 class ByggesakEvaluator:
@@ -933,3 +933,501 @@ class ByggesakEvaluator:
             evaluation=evaluation,
             dokumenter=dokumenter
         )
+
+    @classmethod
+    def pre_evaluate_application(
+        cls,
+        tiltak_tittel: str,
+        address_raw: Optional[str] = None,
+        beskrivelse: Optional[str] = None,
+        extracted_file_text: Optional[str] = None,
+        uploaded_filenames: Optional[List[str]] = None,
+        tomteareal_m2: Optional[float] = None,
+        bya_eksisterende_m2: Optional[float] = None,
+        bya_tiltak_m2: Optional[float] = None,
+        avstand_nabogrense_m: Optional[float] = None,
+        har_nabosamtykke: bool = False,
+        har_avkjorsel_endring: bool = False,
+        er_i_strandsone: bool = False,
+        er_i_lnfr: bool = False,
+        har_dispensasjonssoknad: bool = False,
+        har_nabomerknader: bool = False,
+        har_situasjonsplan: bool = False,
+        har_fasadetegninger: bool = False,
+        har_snittegninger: bool = False,
+        har_ansvarsretter: bool = False,
+    ) -> PreEvaluationReport:
+        """
+        Utfører en omfattende forhåndsevaluering av en ny byggesak før den sendes inn til kommunen.
+        Beregner godkjenningssannsynlighet, kvalitetsscore, kompleksitet, lovfrister og
+        gir konkrete, prioriterte forbedringstiltak basert på plan- og bygningsloven og KPA Tønsberg.
+        """
+        uploaded_filenames = uploaded_filenames or []
+        beskrivelse_text = beskrivelse or ""
+        file_text = extracted_file_text or ""
+        full_text = f"{tiltak_tittel} {address_raw or ''} {beskrivelse_text} {file_text} {' '.join(uploaded_filenames)}".lower()
+
+        # 1. Parse adresse og matrikkel
+        addr_info = cls.parse_address_and_matrikkel(f"{address_raw or ''} {tiltak_tittel}")
+        addr_str = addr_info.raw_address if addr_info.raw_address else (address_raw or "Ikke spesifisert")
+        matrikkel_str = f"Gnr {addr_info.gnr} / Bnr {addr_info.bnr}" if addr_info.gnr else None
+
+        # 2. Kategoriser tiltaket
+        category, subcategory = cls._categorize(full_text, tiltak_tittel)
+
+        # 3. Automatisk deteksjon fra tekst / filnavn dersom ikke eksplisitt angitt
+        if not er_i_strandsone:
+            er_i_strandsone = any(w in full_text for w in ["strandsone", "100-metersbelte", "100 metersbelte", "sjøkant", "vannkant", "strandkanten"])
+        if not er_i_lnfr:
+            er_i_lnfr = any(w in full_text for w in ["lnf", "lnfr", "landbruksområde", "spredt bolig", "landbruk"])
+        if not har_avkjorsel_endring:
+            har_avkjorsel_endring = any(w in full_text for w in ["avkjørsel", "avkjørselstillatelse", "ny avkjørsel", "flytte avkjørsel", "frisikt", "vegloven"])
+        if not har_dispensasjonssoknad:
+            har_dispensasjonssoknad = any(w in full_text for w in ["dispensasjonssøknad", "søknad om dispensasjon", "pbl § 19-2", "dispensasjon etter pbl"])
+        if not har_situasjonsplan:
+            har_situasjonsplan = any(w in full_text for w in ["situasjonsplan", "situasjonskart"]) or any("sit" in f.lower() or "kart" in f.lower() for f in uploaded_filenames)
+        if not har_fasadetegninger:
+            har_fasadetegninger = any(w in full_text for w in ["fasade", "fasader", "fasadetegning"]) or any("fasade" in f.lower() for f in uploaded_filenames)
+        if not har_snittegninger:
+            har_snittegninger = any(w in full_text for w in ["snitt", "snittegning", "terrengsnitt"]) or any("snitt" in f.lower() for f in uploaded_filenames)
+        if not har_ansvarsretter:
+            har_ansvarsretter = any(w in full_text for w in ["ansvarsrett", "gjennomføringsplan", "ansvarlig søker", "prosjekterende", "utførende"])
+
+        # 4. BYA- og Tomteutnyttelsesberegning (TEK17 Kap. 5 / KPA Tønsberg)
+        bya_summary = None
+        bya_overskridelse = 0.0
+        bya_prosent = 0.0
+        kpa_limit = 25.0  # Standard KPA Tønsberg boligområde
+
+        if tomteareal_m2 and tomteareal_m2 > 0:
+            tomt = float(tomteareal_m2)
+            eks_bya = float(bya_eksisterende_m2 or 0.0)
+            tiltak_bya = float(bya_tiltak_m2 or 0.0)
+            
+            # Parkeringskrav i TEK17 / KPA: 18m² per biloppstillingsplass hvis ikke integrert i tiltaket
+            req_parking_bya = 0.0
+            if category in ["Nybygg", "Bruksendring"] and tiltak_bya < 40:
+                req_parking_bya = 36.0  # 2 plasser for ny enebolig
+            elif category == "Tilbygg & Påbygg" and eks_bya > 0 and tiltak_bya > 30:
+                req_parking_bya = 18.0  # 1 plass
+
+            tot_bya = eks_bya + tiltak_bya + req_parking_bya
+            bya_prosent = round((tot_bya / tomt) * 100, 1)
+            bya_overskridelse = max(0.0, round(bya_prosent - kpa_limit, 1))
+
+            bya_summary = {
+                "tomteareal_m2": tomt,
+                "eksisterende_bya_m2": eks_bya,
+                "tiltak_bya_m2": tiltak_bya,
+                "parkering_tillegg_bya_m2": req_parking_bya,
+                "total_bya_m2": tot_bya,
+                "beregnet_bya_prosent": bya_prosent,
+                "kpa_tillatt_bya_prosent": kpa_limit,
+                "overskridelse_prosentpoeng": bya_overskridelse,
+                "er_innenfor_kpa": bya_overskridelse == 0.0,
+                "status_tekst": f"Overskridelse (+{bya_overskridelse} %-poeng)" if bya_overskridelse > 0 else "Konform (Innenfor tillatt %-BYA)"
+            }
+
+        # 5. Evaluer de 8 lovmessige sjekkpunktene (PBL-rammeverket)
+        legal_checkpoints: List[LegalCheckpoint] = []
+        improvements: List[ImprovementAction] = []
+        missing_attachments: List[str] = []
+        strengths: List[str] = []
+
+        # Sjekkpunkt 1: Strandsonen (PBL § 1-8)
+        if er_i_strandsone:
+            if har_dispensasjonssoknad:
+                cp1_status = "Krever avklaring / Mangel"
+                cp1_risk = "Høy"
+                cp1_findings = "Tiltaket ligger i 100-metersbeltet langs sjøen. Dispensasjon er omsøkt, men utløser obligatorisk regional høring (Statsforvalteren og Vestfold Fylkeskommune)."
+                cp1_reqs = "Dokumenter at allmenne ferdsels- og naturinteresser ikke forringes, og at tiltaket har 'klart større fordeler enn ulemper' (pbl § 19-2)."
+                improvements.append(ImprovementAction(
+                    priority="Høy",
+                    category="Strandsone (§ 1-8)",
+                    title="Forsterk strandsonebegrunnelsen",
+                    description="Statsforvalteren har streng innsigelsespraksis i strandsonen i Vestfold.",
+                    action_required="Legg ved særskilt redegjørelse for at tiltaket ikke privatiserer strandsonen eller hindrer allmennhetens ferdsel."
+                ))
+            else:
+                cp1_status = "Kritisk planavvik / Avslagsrisiko"
+                cp1_risk = "Kritisk"
+                cp1_findings = "Tiltaket er plassert i 100-metersbeltet langs sjøen (pbl § 1-8) uten vedlagt dispensasjonssøknad. Automatisk avslagsgrunn!"
+                cp1_reqs = "Det må utarbeides og vedlegges en formell dispensasjonssøknad etter pbl kapittel 19 før innsending."
+                improvements.append(ImprovementAction(
+                    priority="Høy",
+                    category="Strandsone (§ 1-8)",
+                    title="Obligatorisk dispensasjonssøknad mangler",
+                    description="Tiltak i strandsonen er underlagt generelt byggeforbud etter pbl § 1-8.",
+                    action_required="Send inn begrunnet søknad om dispensasjon fra pbl § 1-8 som nabovarsles særskilt."
+                ))
+        else:
+            cp1_status = "Ivaretatt / Konform"
+            cp1_risk = "Lav"
+            cp1_findings = "Tiltaket ligger utenfor 100-metersbeltet langs sjøen. Ingen konflikt med pbl § 1-8."
+            cp1_reqs = "Ingen særvilkår for strandsone."
+            strengths.append("Plassert utenfor strandsone og byggeforbudssoner (§ 1-8).")
+
+        legal_checkpoints.append(LegalCheckpoint(
+            id="pbl_1_8",
+            title="Strandsonen og 100-metersbeltet",
+            legal_reference="Plan- og bygningsloven § 1-8 / SPR",
+            status=cp1_status,
+            risk_level=cp1_risk,
+            findings=cp1_findings,
+            requirements_to_pass=cp1_reqs
+        ))
+
+        # Sjekkpunkt 2: Arealplan og Grad av utnytting (%-BYA)
+        if bya_summary and not bya_summary["er_innenfor_kpa"]:
+            if har_dispensasjonssoknad:
+                cp2_status = "Krever avklaring / Mangel"
+                cp2_risk = "Høy"
+                cp2_findings = f"Beregnet %-BYA er {bya_prosent} %, som overskrider tillatt ramme ({kpa_limit} %) med {bya_overskridelse} %-poeng. Dispensasjon er omsøkt."
+                cp2_reqs = f"Begrunn overskridelsen på {bya_overskridelse} %-poeng i henhold til de to kumulative vilkårene i pbl § 19-2."
+                improvements.append(ImprovementAction(
+                    priority="Høy",
+                    category="Arealplan & BYA",
+                    title="Vurder å redusere tiltakets fotavtrykk",
+                    description=f"Tomten overskrider KPA-grensen med {bya_overskridelse} %-poeng. Tønsberg kommune er restriktive til overutnyttelse.",
+                    action_required=f"Reduser tiltakets bebygde areal med ca. {round(bya_overskridelse * (tomteareal_m2 or 500) / 100, 1)} m² for å unngå dispensasjonskrav."
+                ))
+            else:
+                cp2_status = "Kritisk planavvik / Avslagsrisiko"
+                cp2_risk = "Kritisk"
+                cp2_findings = f"Beregnet %-BYA ({bya_prosent} %) overskrider kommuneplanens arealdel ({kpa_limit} %) med {bya_overskridelse} %-poeng uten dispensasjonssøknad."
+                cp2_reqs = "Reduser fotavtrykket eller legg ved dispensasjonssøknad etter pbl § 19-2 for overskridelse av utnyttingsgrad."
+                improvements.append(ImprovementAction(
+                    priority="Høy",
+                    category="Arealplan & BYA",
+                    title="Ulovlig overutnyttelse av tomt",
+                    description="Søknaden overskrider tillatt %-BYA i strid med kommuneplanens arealdel (KPA).",
+                    action_required="Enten reduser arealet slik at %-BYA er under 25 %, eller søk dispensasjon fra KPA."
+                ))
+        elif bya_summary:
+            cp2_status = "Ivaretatt / Konform"
+            cp2_risk = "Lav"
+            cp2_findings = f"Beregnet %-BYA er {bya_prosent} %, som er fullt ut i samsvar med tillatt utnyttingsgrad ({kpa_limit} %)."
+            cp2_reqs = "Overhold fotavtrykket som vist i situasjonsplanen."
+            strengths.append(f"Tomteutnyttelse (%-BYA = {bya_prosent} %) er innenfor KPA Tønsbergs krav på {kpa_limit} %.")
+        else:
+            cp2_status = "Krever avklaring / Mangel"
+            cp2_risk = "Moderat"
+            cp2_findings = "Tomtestørrelse eller bebygd areal er ikke oppgitt. Utnyttelsesgrad (%-BYA) kan ikke kontrolleres."
+            cp2_reqs = "Legg inn tomtens areal og eksisterende/nytt bebygd areal for automatisk kontroll."
+            improvements.append(ImprovementAction(
+                priority="Medium",
+                category="Arealplan & BYA",
+                title="Dokumenter tomtens arealregnskap",
+                description="Kommunen krever at %-BYA er nøyaktig utregnet på situasjonsplanen.",
+                action_required="Oppgi tomtens areal og bebygd areal (inkl. parkering) i søknadsskjemaet."
+            ))
+
+        legal_checkpoints.append(LegalCheckpoint(
+            id="pbl_bya",
+            title="Arealplan og utnyttingsgrad (%-BYA)",
+            legal_reference="PBL § 11-7 / TEK17 kap. 5 / KPA Tønsberg",
+            status=cp2_status,
+            risk_level=cp2_risk,
+            findings=cp2_findings,
+            requirements_to_pass=cp2_reqs
+        ))
+
+        # Sjekkpunkt 3: Plassering og Nabogrenser (PBL § 29-4)
+        if avstand_nabogrense_m is not None and avstand_nabogrense_m < 4.0:
+            if har_nabosamtykke:
+                cp3_status = "Ivaretatt / Konform"
+                cp3_risk = "Lav"
+                cp3_findings = f"Avstand til nabogrense er {avstand_nabogrense_m} m (< 4m), men skriftlig nabosamtykke foreligger (pbl § 29-4 tredje ledd bokstav a)."
+                cp3_reqs = "Legg ved det signerte nabosamtykket som vedlegg i søknaden."
+                strengths.append("Skriftlig nabosamtykke foreligger for plassering nærmere enn 4 meter (§ 29-4).")
+            elif category == "Garasje & Uthus" and avstand_nabogrense_m >= 1.0 and (bya_tiltak_m2 or 0) <= 50.0:
+                cp3_status = "Ivaretatt / Konform"
+                cp3_risk = "Lav"
+                cp3_findings = f"Frittliggende garasje under 50 m² plassert {avstand_nabogrense_m} m fra nabogrense (SAK10 § 4-1 / pbl § 29-4 tredje ledd bokstav b)."
+                cp3_reqs = "Sikre at mønehøyde ikke overstiger 4,0 meter og gesimshøyde 3,0 meter."
+                strengths.append("Garasjen oppfyller 1-metersregelen etter SAK10 § 4-1 for småbygg.")
+            elif har_dispensasjonssoknad:
+                cp3_status = "Krever avklaring / Mangel"
+                cp3_risk = "Høy"
+                cp3_findings = f"Avstand til nabogrense ({avstand_nabogrense_m} m) krever dispensasjon fra 4-metersregelen. Dispensasjon er omsøkt."
+                cp3_reqs = "Begrunn hvorfor tiltakets plassering ikke medfører vesentlig ulempe for naboen (lys, innsyn, brannsikring)."
+                improvements.append(ImprovementAction(
+                    priority="Høy",
+                    category="Nabogrense (§ 29-4)",
+                    title="Innhent skriftlig nabosamtykke for å unngå dispensasjon",
+                    description="Dersom naboen signerer nabosamtykke, slipper du dispensasjonsbehandling etter § 19-2 og 12-ukers frist.",
+                    action_required="Be naboen signere standarderklæring om samtykke til nær plassering etter pbl § 29-4."
+                ))
+            else:
+                cp3_status = "Kritisk planavvik / Avslagsrisiko"
+                cp3_risk = "Kritisk"
+                cp3_findings = f"Plassert {avstand_nabogrense_m} m fra nabogrense uten nabosamtykke eller dispensasjonssøknad. I strid med pbl § 29-4!"
+                cp3_reqs = "Innhent skriftlig samtykke fra berørt nabo, eller søk dispensasjon fra pbl § 29-4."
+                improvements.append(ImprovementAction(
+                    priority="Høy",
+                    category="Nabogrense (§ 29-4)",
+                    title="Mangler nabosamtykke eller dispensasjon fra avstandskrav",
+                    description="Byggverk kan ikke plasseres nærmere enn 4 meter uten samtykke eller dispensasjon.",
+                    action_required="Innhent signert nabosamtykke fra berørt naboeiendom."
+                ))
+        else:
+            cp3_status = "Ivaretatt / Konform"
+            cp3_risk = "Lav"
+            cp3_findings = "Plassering overholder lovens 4-meterskrav til nabogrense (pbl § 29-4 andre ledd)."
+            cp3_reqs = "Påløper ingen avstandskrav."
+            strengths.append("Overholder lovfestet avstandskrav på minimum 4,0 meter til nabogrenser (§ 29-4).")
+
+        legal_checkpoints.append(LegalCheckpoint(
+            id="pbl_29_4",
+            title="Plassering og avstand til nabogrense",
+            legal_reference="Plan- og bygningsloven § 29-4 / SAK10 § 4-1",
+            status=cp3_status,
+            risk_level=cp3_risk,
+            findings=cp3_findings,
+            requirements_to_pass=cp3_reqs
+        ))
+
+        # Sjekkpunkt 4: Infrastruktur og Avkjørsel (PBL § 27-4 / Vegloven § 40)
+        if har_avkjorsel_endring:
+            cp4_status = "Krever avklaring / Mangel"
+            cp4_risk = "Moderat"
+            cp4_findings = "Endring eller etablering av avkjørsel krever godkjenning fra vegmyndigheten samt inntegnet frisikttrekant (pbl § 27-4)."
+            cp4_reqs = "Tegn inn frisiktsone (4 x 20 meter ved 30-50 km/t) på situasjonsplanen og vis snuplass på egen tomt."
+            improvements.append(ImprovementAction(
+                priority="Medium",
+                category="Vei & Avkjørsel (§ 27-4)",
+                title="Tegn inn frisikttrekant og snuplass på situasjonsplanen",
+                description="Kommunen og vegmyndigheten avslår eller stanser søknader som medfører rygging ut på offentlig gate.",
+                action_required="Vis frisiktsone (4x20m) og biloppstillingsplass/snuareal på situasjonsplanen."
+            ))
+        else:
+            cp4_status = "Ivaretatt / Konform"
+            cp4_risk = "Lav"
+            cp4_findings = "Ingen endring av avkjørsel eller vegtilknytning registrert. Adkomst er sikret (pbl § 27-4)."
+            cp4_reqs = "Ingen særskilt avkjørselsbehandling nødvendig."
+            strengths.append("Ingen konflikt med vegtilknytning eller avkjørselsmyndighet (§ 27-4).")
+
+        legal_checkpoints.append(LegalCheckpoint(
+            id="pbl_27_4",
+            title="Infrastruktur, adkomst og avkjørsel",
+            legal_reference="Plan- og bygningsloven § 27-4 / Vegloven § 40",
+            status=cp4_status,
+            risk_level=cp4_risk,
+            findings=cp4_findings,
+            requirements_to_pass=cp4_reqs
+        ))
+
+        # Sjekkpunkt 5: Naturfarer og byggegrunn (PBL § 28-1)
+        legal_checkpoints.append(LegalCheckpoint(
+            id="pbl_28_1",
+            title="Naturfarer, geoteknikk og byggegrunn",
+            legal_reference="Plan- og bygningsloven § 28-1 / TEK17 kap. 7",
+            status="Ivaretatt / Konform",
+            risk_level="Lav",
+            findings="Ingen kjente akutte faresoner registrert på eiendommen.",
+            requirements_to_pass="Sikre tilstrekkelig overvannshåndtering og radonforebygging etter TEK17."
+        ))
+
+        # Sjekkpunkt 6: Visuell kvalitet og estetikk (PBL § 29-2)
+        legal_checkpoints.append(LegalCheckpoint(
+            id="pbl_29_2",
+            title="Visuelle kvaliteter og estetikk",
+            legal_reference="Plan- og bygningsloven § 29-2 / SAK10",
+            status="Ivaretatt / Konform",
+            risk_level="Lav",
+            findings="Tiltaket forutsettes tilpasset eksisterende bygningsmiljø og strøkets karakter.",
+            requirements_to_pass="Vis fargevalg og materialbruk på fasadetegningene."
+        ))
+
+        # Sjekkpunkt 7: Dispensasjonsvurdering (PBL Kapittel 19)
+        disp_needed = er_i_strandsone or (bya_overskridelse > 0) or (avstand_nabogrense_m is not None and avstand_nabogrense_m < 4.0 and not har_nabosamtykke)
+        if disp_needed:
+            if har_dispensasjonssoknad:
+                cp7_status = "Krever avklaring / Mangel"
+                cp7_risk = "Moderat"
+                cp7_findings = "Dispensasjon er omsøkt. Kommunen må foreta en skjønnsmessig vurdering av lovvilkårene i pbl § 19-2."
+                cp7_reqs = "Sørg for at begrunnelsen vektlegger at fordelene er klart større enn ulempene for allmennheten."
+            else:
+                cp7_status = "Kritisk planavvik / Avslagsrisiko"
+                cp7_risk = "Kritisk"
+                cp7_findings = "Tiltaket krever dispensasjon fra plan eller lovbestemmelser, men formell dispensasjonssøknad mangler."
+                cp7_reqs = "Utarbeid en særskilt dispensasjonssøknad og send ut særskilt nabovarsel før innsending."
+        else:
+            cp7_status = "Ivaretatt / Konform"
+            cp7_risk = "Lav"
+            cp7_findings = "Tiltaket er i tråd med gjeldende plan- og lovverk. Ingen dispensasjonsbehandling påkrevd."
+            cp7_reqs = "Ingen dispensasjonssøknad nødvendig."
+            strengths.append("Ingen dispensasjonskrav etter pbl kapittel 19.")
+
+        legal_checkpoints.append(LegalCheckpoint(
+            id="pbl_19_2",
+            title="Dispensasjonsvilkår og begrunnelse",
+            legal_reference="Plan- og bygningsloven §§ 19-1 og 19-2",
+            status=cp7_status,
+            risk_level=cp7_risk,
+            findings=cp7_findings,
+            requirements_to_pass=cp7_reqs
+        ))
+
+        # Sjekkpunkt 8: Saksbehandlingskrav & Vedleggskontroll (PBL § 21-7 / SAK10)
+        if not har_situasjonsplan:
+            missing_attachments.append("Situasjonsplan i målestokk 1:500 på oppdatert kartgrunnlag med inntegnede avstander og mål.")
+        if not har_fasadetegninger:
+            missing_attachments.append("Fasadetegninger (1:100) av alle berørte fasader med terrenglinjer (eksisterende og nytt).")
+        if not har_snittegninger:
+            missing_attachments.append("Snittegning (1:100) med gesims- og mønehøyde over gjennomsnittlig planert terreng.")
+        if har_nabomerknader:
+            missing_attachments.append("Tilsvar til innkomne nabomerknader samt redegjørelse for eventuelle tilpasninger.")
+        if har_avkjorsel_endring:
+            missing_attachments.append("Avkjørselsplan med inntegnet frisiktsone (4x20m) og godkjenning fra vegmyndigheten.")
+
+        if missing_attachments:
+            cp8_status = "Krever avklaring / Mangel"
+            cp8_risk = "Moderat"
+            cp8_findings = f"Det mangler {len(missing_attachments)} sentrale vedlegg. Dette vil medføre at kommunen stanser fristen med mangelbrev."
+            cp8_reqs = "Vedlegg alle påkrevde tegninger og dokumenter før innsending."
+            improvements.append(ImprovementAction(
+                priority="Medium",
+                category="Vedlegg & Dokumentasjon",
+                title=f"Kompletter søknaden med {len(missing_attachments)} manglende vedlegg",
+                description="Ufullstendige søknader forårsaker forsinkelser og nullstiller kommunens saksbehandlingsfrist.",
+                action_required="Last opp/legg ved alle manglende tegninger og dokumenter før innsending."
+            ))
+        else:
+            cp8_status = "Ivaretatt / Konform"
+            cp8_risk = "Lav"
+            cp8_findings = "Alle grunnleggende vedlegg og tegninger er identifisert og ivaretatt."
+            cp8_reqs = "Kontroller at tegningene er i riktig målestokk (1:500 / 1:100) ved innsending."
+            strengths.append("Komplett sett med situasjonsplan, fasade- og snittegninger registrert.")
+
+        legal_checkpoints.append(LegalCheckpoint(
+            id="pbl_21_7",
+            title="Saksbehandlingskrav og vedleggskompletthet",
+            legal_reference="Plan- og bygningsloven § 21-7 / SAK10 kap. 5",
+            status=cp8_status,
+            risk_level=cp8_risk,
+            findings=cp8_findings,
+            requirements_to_pass=cp8_reqs
+        ))
+
+        # 6. Beregn Kvantitativ Kvalitetsscore og Innvilgelsessannsynlighet %
+        quality_score = 90
+        risk_score = 15
+
+        critical_count = sum(1 for cp in legal_checkpoints if cp.status == "Kritisk planavvik / Avslagsrisiko")
+        warning_count = sum(1 for cp in legal_checkpoints if cp.status == "Krever avklaring / Mangel")
+
+        quality_score -= (critical_count * 35)
+        quality_score -= (warning_count * 12)
+        quality_score -= (len(missing_attachments) * 6)
+        if har_nabomerknader:
+            quality_score -= 10
+
+        # Beregn sannsynlighet
+        if critical_count > 0:
+            approval_probability_pct = max(10, min(35, quality_score - 20))
+            probability_verdict = "Kritisk planbrudd / Høy risiko for avslag (Må rettes før innsending)"
+            risk_level = "Kritisk"
+            risk_score = 85
+        elif warning_count >= 2 or len(missing_attachments) >= 2:
+            approval_probability_pct = max(40, min(74, quality_score - 5))
+            probability_verdict = "Moderat risiko for mangelbrev (Bør suppleres før innsending)"
+            risk_level = "Moderat"
+            risk_score = 45
+        elif warning_count == 1 or len(missing_attachments) == 1:
+            approval_probability_pct = max(75, min(89, quality_score))
+            probability_verdict = "God søknad med mindre avklaringspunkter"
+            risk_level = "Lav"
+            risk_score = 25
+        else:
+            approval_probability_pct = min(98, max(90, quality_score + 5))
+            probability_verdict = "Svært høy sannsynlighet for innvilgelse (Klar til innsending)"
+            risk_level = "Lav"
+            risk_score = 10
+
+        quality_score = max(10, min(99, quality_score))
+
+        # 7. Kompleksitetsberegning
+        complexity_score = 3
+        if er_i_strandsone:
+            complexity_score += 3
+        if disp_needed:
+            complexity_score += 2
+        if har_avkjorsel_endring:
+            complexity_score += 1
+        if category in ["Nybygg", "Næring / Formålsbygg"]:
+            complexity_score += 2
+        elif category in ["Tilbygg & Påbygg", "Garasje & Uthus"]:
+            complexity_score += 1
+
+        complexity_score = min(10, max(1, complexity_score))
+        if complexity_score >= 8:
+            complexity_level = "Svært kompleks"
+        elif complexity_score >= 6:
+            complexity_level = "Kompleks"
+        elif complexity_score >= 4:
+            complexity_level = "Standard"
+        else:
+            complexity_level = "Enkel"
+
+        # 8. Saksbehandlingsfrist
+        if disp_needed or har_nabomerknader or er_i_strandsone or category in ["Nybygg", "Næring / Formålsbygg"]:
+            statutory_deadline_weeks = 12
+            statutory_deadline_basis = "12 ukers lovpålagt frist (pbl § 21-7 første ledd). Saken omfatter dispensasjon, nabomerknader eller ordinært søknadspliktig tiltak."
+        else:
+            statutory_deadline_weeks = 3
+            statutory_deadline_basis = "3 ukers lovpålagt frist (pbl § 21-7 andre ledd). Tiltaket er i samsvar med plan og bestemmelser, uten dispensasjon eller nabomerknader."
+
+        # 9. Generer oppsummering og anbefaling
+        summary = (
+            f"Forhåndsevaluering av '{tiltak_tittel}' ({category}). "
+            f"Søknadskvaliteten er vurdert til {quality_score}/100 med en estimert godkjenningssannsynlighet på {approval_probability_pct} %. "
+            f"Tiltaket er klassifisert som '{complexity_level}' (kompleksitet {complexity_score}/10). "
+            f"{'Saken krever 12 ukers ordinær saksbehandling pga. dispensasjon/naboforhold.' if statutory_deadline_weeks == 12 else 'Søknaden kvalifiserer for rask 3-ukers behandlingstid etter pbl § 21-7.'}"
+        )
+
+        if critical_count > 0:
+            recommendations = (
+                f"STOPP: Søknaden bør IKKE sendes inn i nåværende form! Det er avdekket {critical_count} kritiske plan- eller lovavvik "
+                f"(bl.a. {', '.join([cp.title for cp in legal_checkpoints if cp.status == 'Kritisk planavvik / Avslagsrisiko'])}). "
+                f"Følg tiltakslisten og rett opp disse punktene før innsending for å unngå formelt avslag eller tidkrevende omgjøringsprosesser."
+            )
+        elif improvements or missing_attachments:
+            recommendations = (
+                f"ANBEFALING: Søknaden har gode forutsetninger, men bør suppleres med {len(missing_attachments)} manglende vedlegg "
+                f"og avklaring av {len(improvements)} tiltakspunkter før innsending. "
+                f"Dette vil sikre at kommunen ikke stanser saksbehandlingsfristen med mangelbrev."
+            )
+        else:
+            recommendations = (
+                "GRØNT LYS: Søknaden fremstår som komplett, lovkonform og godt forberedt. "
+                "Søknaden kan trygt sendes inn til Tønsberg kommune via Byggesøknaden / Fellestjenester Bygg."
+            )
+
+        snippet = (extracted_file_text[:300] + "...") if extracted_file_text and len(extracted_file_text) > 300 else extracted_file_text
+
+        return PreEvaluationReport(
+            tiltak_tittel=tiltak_tittel,
+            category=category,
+            subcategory=subcategory,
+            address=addr_str,
+            matrikkel=matrikkel_str,
+            approval_probability_pct=approval_probability_pct,
+            probability_verdict=probability_verdict,
+            quality_score=quality_score,
+            complexity_score=complexity_score,
+            complexity_level=complexity_level,
+            risk_level=risk_level,
+            risk_score=risk_score,
+            statutory_deadline_weeks=statutory_deadline_weeks,
+            statutory_deadline_basis=statutory_deadline_basis,
+            bya_summary=bya_summary,
+            improvements=improvements,
+            missing_attachments=missing_attachments,
+            strengths=strengths,
+            legal_checkpoints=legal_checkpoints,
+            summary=summary,
+            recommendations=recommendations,
+            extracted_text_snippet=snippet
+        )
+

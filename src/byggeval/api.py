@@ -3,17 +3,22 @@ FastAPI REST API for Byggeval web-presentasjon og saksutforsker.
 """
 
 import os
+import io
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, Query, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Query, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+try:
+    from pypdf import PdfReader
+except ImportError:
+    PdfReader = None
 
 from .database import Database
 from .client import TonsbergInnsynClient
 from .evaluator import ByggesakEvaluator
-from .models import Byggesak
+from .models import Byggesak, PreEvaluationReport
 
 app = FastAPI(
     title="Byggeval - Tønsberg Byggesaker API",
@@ -184,10 +189,94 @@ def trigger_sync(req: SyncRequest, background_tasks: BackgroundTasks):
     return {"status": "started", "message": f"Synkronisering startet for {req.pages} sider."}
 
 
-@app.get("/api/sync/status")
-def get_sync_status():
-    """Henter status for pågående synkronisering."""
-    return sync_state
+def extract_text_from_file(data: bytes, filename: str) -> str:
+    """Ekstraherer ren tekst fra opplastede PDF-er eller tekstfiler for forhåndsevaluering."""
+    fn = filename.lower()
+    if fn.endswith(".pdf") and PdfReader is not None:
+        try:
+            reader = PdfReader(io.BytesIO(data))
+            text_parts = []
+            for page in reader.pages[:15]:  # Begrens til første 15 sider
+                t = page.extract_text()
+                if t:
+                    text_parts.append(t)
+            return "\n".join(text_parts)
+        except Exception:
+            return ""
+    elif fn.endswith((".txt", ".md", ".json", ".xml", ".csv")):
+        try:
+            return data.decode("utf-8", errors="ignore")
+        except Exception:
+            return ""
+    return ""
+
+
+@app.post("/api/pre-evaluate")
+async def pre_evaluate_application(
+    tiltak_tittel: str = Form(..., description="Tittel eller kort beskrivelse av tiltaket"),
+    address_raw: Optional[str] = Form(None, description="Adresse eller gnr/bnr i Tønsberg"),
+    beskrivelse: Optional[str] = Form(None, description="Utdypende prosjektbeskrivelse"),
+    tomteareal_m2: Optional[float] = Form(None, description="Tomtens areal i m²"),
+    bya_eksisterende_m2: Optional[float] = Form(None, description="Eksisterende bebygd areal (m²)"),
+    bya_tiltak_m2: Optional[float] = Form(None, description="Nytt bebygd areal for omsøkt tiltak (m²)"),
+    avstand_nabogrense_m: Optional[float] = Form(None, description="Korteste avstand til nabogrense i meter"),
+    har_nabosamtykke: bool = Form(False, description="Foreligger skriftlig nabosamtykke"),
+    har_avkjorsel_endring: bool = Form(False, description="Omfatter endring eller etablering av avkjørsel"),
+    er_i_strandsone: bool = Form(False, description="Ligger i 100-metersbeltet langs sjøen"),
+    er_i_lnfr: bool = Form(False, description="Ligger i LNFR-område"),
+    har_dispensasjonssoknad: bool = Form(False, description="Det er utarbeidet dispensasjonssøknad"),
+    har_nabomerknader: bool = Form(False, description="Det er mottatt nabomerknader"),
+    har_situasjonsplan: bool = Form(False, description="Situasjonsplan 1:500 er vedlagt"),
+    har_fasadetegninger: bool = Form(False, description="Fasadetegninger 1:100 er vedlagt"),
+    har_snittegninger: bool = Form(False, description="Snittegninger 1:100 er vedlagt"),
+    har_ansvarsretter: bool = Form(False, description="Gjennomføringsplan / ansvarsretter er avklart"),
+    files: Optional[List[UploadFile]] = File(None, description="Opplastede tegninger, søknadsdokumenter eller PDF-er")
+):
+    """
+    Kjører forhåndsevaluering av en ny, usendt byggesøknad.
+    Beregner innvilgelsessannsynlighet %, kvalitetsscore, kompleksitet og gir konkrete forbedringsanbefalinger.
+    """
+    extracted_texts = []
+    uploaded_filenames = []
+
+    if files:
+        for f in files:
+            if not f.filename:
+                continue
+            uploaded_filenames.append(f.filename)
+            try:
+                content = await f.read()
+                txt = extract_text_from_file(content, f.filename)
+                if txt:
+                    extracted_texts.append(f"--- Vedlegg: {f.filename} ---\n" + txt[:4000])
+            except Exception:
+                pass
+
+    combined_file_text = "\n\n".join(extracted_texts)
+
+    report = ByggesakEvaluator.pre_evaluate_application(
+        tiltak_tittel=tiltak_tittel,
+        address_raw=address_raw,
+        beskrivelse=beskrivelse,
+        extracted_file_text=combined_file_text,
+        uploaded_filenames=uploaded_filenames,
+        tomteareal_m2=tomteareal_m2,
+        bya_eksisterende_m2=bya_eksisterende_m2,
+        bya_tiltak_m2=bya_tiltak_m2,
+        avstand_nabogrense_m=avstand_nabogrense_m,
+        har_nabosamtykke=har_nabosamtykke,
+        har_avkjorsel_endring=har_avkjorsel_endring,
+        er_i_strandsone=er_i_strandsone,
+        er_i_lnfr=er_i_lnfr,
+        har_dispensasjonssoknad=har_dispensasjonssoknad,
+        har_nabomerknader=har_nabomerknader,
+        har_situasjonsplan=har_situasjonsplan,
+        har_fasadetegninger=har_fasadetegninger,
+        har_snittegninger=har_snittegninger,
+        har_ansvarsretter=har_ansvarsretter
+    )
+
+    return report.model_dump()
 
 
 # Monter statiske filer
@@ -198,3 +287,4 @@ if os.path.exists(static_dir):
     @app.get("/")
     def serve_index():
         return FileResponse(os.path.join(static_dir, "index.html"))
+
